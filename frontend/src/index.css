@@ -4,26 +4,32 @@
 
 @layer base {
   :root {
-    --background: 0 0% 10%;
-    --foreground: 0 0% 88%;
-    --card: 0 0% 14%;
-    --card-foreground: 0 0% 88%;
-    --popover: 0 0% 14%;
-    --popover-foreground: 0 0% 88%;
-    --primary: 122 39% 49%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 20%;
-    --secondary-foreground: 0 0% 88%;
-    --muted: 0 0% 20%;
-    --muted-foreground: 0 0% 53%;
-    --accent: 0 0% 20%;
-    --accent-foreground: 0 0% 88%;
-    --destructive: 0 62% 50%;
+    /* Midnight Amber - a retro-futuristic radio terminal palette */
+    --background: 222 47% 6%;
+    --foreground: 40 20% 88%;
+    --card: 222 40% 10%;
+    --card-foreground: 40 20% 88%;
+    --popover: 222 44% 9%;
+    --popover-foreground: 40 20% 88%;
+    --primary: 38 92% 50%;
+    --primary-foreground: 222 47% 6%;
+    --secondary: 222 30% 16%;
+    --secondary-foreground: 40 20% 85%;
+    --muted: 222 30% 14%;
+    --muted-foreground: 215 15% 50%;
+    --accent: 187 80% 42%;
+    --accent-foreground: 222 47% 6%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 122 39% 49%;
-    --radius: 0.5rem;
+    --border: 222 30% 18%;
+    --input: 222 30% 16%;
+    --ring: 38 92% 50%;
+    --radius: 0.75rem;
+
+    /* Extended palette for gradients and glow effects */
+    --amber-glow: 38 92% 50%;
+    --cyan-accent: 187 80% 42%;
+    --surface-glass: 222 40% 12%;
   }
 }
 
@@ -33,9 +39,132 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family:
+      'Inter',
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      Roboto,
+      sans-serif;
     font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
+}
+
+/* Glow and animation utilities */
+@layer utilities {
+  .glow-amber {
+    box-shadow:
+      0 0 15px -3px hsl(38 92% 50% / 0.3),
+      0 0 6px -4px hsl(38 92% 50% / 0.2);
+  }
+  .glow-amber-sm {
+    box-shadow: 0 0 8px -2px hsl(38 92% 50% / 0.25);
+  }
+  .glow-cyan {
+    box-shadow:
+      0 0 15px -3px hsl(187 80% 42% / 0.3),
+      0 0 6px -4px hsl(187 80% 42% / 0.2);
+  }
+  .glow-connected {
+    box-shadow: 0 0 8px 2px hsl(142 70% 45% / 0.4);
+  }
+  .glass {
+    background: hsl(222 40% 12% / 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .glass-strong {
+    background: hsl(222 40% 10% / 0.9);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  .text-gradient-amber {
+    background: linear-gradient(135deg, hsl(38 92% 50%), hsl(28 92% 55%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .border-glow {
+    border-color: hsl(38 92% 50% / 0.3);
+  }
+  .border-glow-cyan {
+    border-color: hsl(187 80% 42% / 0.3);
+  }
+}
+
+/* Keyframe animations */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 4px 1px hsl(142 70% 45% / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 10px 3px hsl(142 70% 45% / 0.6);
+  }
+}
+
+@keyframes pulse-amber {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes signal-wave {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+@keyframes slide-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-pulse-amber {
+  animation: pulse-amber 2s ease-in-out infinite;
+}
+
+.animate-slide-up-fade {
+  animation: slide-up-fade 0.2s ease-out;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(222 30% 22%);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(222 30% 30%);
 }
 
 /* Constrain CodeMirror editor width */

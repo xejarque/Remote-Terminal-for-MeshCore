@@ -47,6 +47,7 @@ import {
   loadLocalStorageFavorites,
   clearLocalStorageFavorites,
 } from './utils/favorites';
+import { Star, Trash2, Route, Hash } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
   AppSettings,
@@ -878,27 +879,32 @@ export function App() {
   );
 
   const settingsSidebarContent = (
-    <div className="sidebar w-60 h-full min-h-0 bg-card border-r border-border flex flex-col">
-      <div className="flex justify-between items-center px-3 py-3 border-b border-border">
-        <h2 className="text-xs uppercase text-muted-foreground font-medium">Settings</h2>
+    <div className="sidebar w-64 h-full min-h-0 bg-card/50 backdrop-blur-sm border-r border-border/50 flex flex-col">
+      <div className="flex justify-between items-center px-4 py-3 border-b border-border/50">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Settings
+        </h2>
         <button
           type="button"
           onClick={handleCloseSettingsView}
-          className="h-6 w-6 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+          className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-all text-sm"
           title="Back to conversations"
           aria-label="Back to conversations"
         >
           ←
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="flex-1 overflow-y-auto py-2">
         {SETTINGS_SECTION_ORDER.map((section) => (
           <button
             key={section}
             type="button"
             className={cn(
-              'w-full px-3 py-2.5 text-left border-l-2 border-transparent hover:bg-accent',
-              settingsSection === section && 'bg-accent border-l-primary'
+              'w-full px-4 py-2.5 text-left text-sm transition-all mx-1.5 rounded-lg',
+              'w-[calc(100%-12px)]',
+              settingsSection === section
+                ? 'bg-primary/10 text-foreground border border-primary/20 font-medium'
+                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50 border border-transparent'
             )}
             onClick={() => setSettingsSection(section)}
           >
@@ -912,7 +918,7 @@ export function App() {
   const activeSidebarContent = showSettings ? settingsSidebarContent : sidebarContent;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-background">
       <StatusBar
         health={health}
         config={config}
@@ -940,8 +946,9 @@ export function App() {
             {activeConversation ? (
               activeConversation.type === 'map' ? (
                 <>
-                  <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium text-lg">
-                    Node Map
+                  <div className="flex items-center gap-2 px-5 py-3 border-b border-border/50 bg-card/30">
+                    <Hash className="h-4 w-4 text-primary/60" />
+                    <span className="font-semibold text-base">Node Map</span>
                   </div>
                   <div className="flex-1 overflow-hidden">
                     <MapView contacts={contacts} focusedKey={activeConversation.mapFocusKey} />
@@ -956,8 +963,9 @@ export function App() {
                 />
               ) : activeConversation.type === 'raw' ? (
                 <>
-                  <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium text-lg">
-                    Raw Packet Feed
+                  <div className="flex items-center gap-2 px-5 py-3 border-b border-border/50 bg-card/30">
+                    <Hash className="h-4 w-4 text-primary/60" />
+                    <span className="font-semibold text-base">Raw Packet Feed</span>
                   </div>
                   <div className="flex-1 overflow-hidden">
                     <RawPacketList packets={rawPackets} />
@@ -965,9 +973,10 @@ export function App() {
                 </>
               ) : (
                 <>
-                  <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium text-lg gap-2">
+                  {/* Conversation header */}
+                  <div className="flex justify-between items-center px-5 py-3 border-b border-border/50 bg-card/30 gap-3">
                     <span className="flex flex-wrap items-baseline gap-x-2 min-w-0 flex-1">
-                      <span className="flex-shrink-0">
+                      <span className="flex-shrink-0 font-semibold text-base">
                         {activeConversation.type === 'channel' &&
                         !activeConversation.name.startsWith('#') &&
                         activeConversation.name !== 'Public'
@@ -976,7 +985,7 @@ export function App() {
                         {activeConversation.name}
                       </span>
                       <span
-                        className="font-normal text-sm text-muted-foreground font-mono truncate cursor-pointer hover:text-primary"
+                        className="font-normal text-xs text-muted-foreground/50 font-mono truncate cursor-pointer hover:text-primary transition-colors"
                         onClick={(e) => {
                           e.stopPropagation();
                           navigator.clipboard.writeText(activeConversation.id);
@@ -1011,9 +1020,7 @@ export function App() {
                               `${contact.last_path_len} hop${contact.last_path_len > 1 ? 's' : ''}`
                             );
                           }
-                          // Add coordinate link if contact has valid location
                           if (isValidLocation(contact.lat, contact.lon)) {
-                            // Calculate distance from us if we have valid location
                             const distFromUs =
                               config && isValidLocation(config.lat, config.lon)
                                 ? calculateDistance(
@@ -1026,7 +1033,7 @@ export function App() {
                             parts.push(
                               <span key="coords">
                                 <span
-                                  className="font-mono cursor-pointer hover:text-primary hover:underline"
+                                  className="font-mono cursor-pointer hover:text-primary hover:underline transition-colors"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     const url =
@@ -1044,7 +1051,7 @@ export function App() {
                             );
                           }
                           return parts.length > 0 ? (
-                            <span className="font-normal text-sm text-muted-foreground flex-shrink-0">
+                            <span className="font-normal text-xs text-muted-foreground/60 flex-shrink-0">
                               (
                               {parts.map((part, i) => (
                                 <span key={i}>
@@ -1057,22 +1064,20 @@ export function App() {
                           ) : null;
                         })()}
                     </span>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {/* Direct trace button (contacts only) */}
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
                       {activeConversation.type === 'contact' && (
                         <button
-                          className="p-1.5 rounded hover:bg-accent text-xl leading-none"
+                          className="p-2 rounded-lg text-muted-foreground hover:text-accent hover:bg-accent/10 transition-all"
                           onClick={handleTrace}
                           title="Direct Trace"
                         >
-                          &#x1F6CE;
+                          <Route className="h-4 w-4" />
                         </button>
                       )}
-                      {/* Favorite button */}
                       {(activeConversation.type === 'channel' ||
                         activeConversation.type === 'contact') && (
                         <button
-                          className="p-1.5 rounded hover:bg-accent text-xl leading-none"
+                          className="p-2 rounded-lg hover:bg-secondary transition-all"
                           onClick={() =>
                             handleToggleFavorite(
                               activeConversation.type as 'channel' | 'contact',
@@ -1089,24 +1094,26 @@ export function App() {
                               : 'Add to favorites'
                           }
                         >
-                          {isFavorite(
-                            favorites,
-                            activeConversation.type as 'channel' | 'contact',
-                            activeConversation.id
-                          ) ? (
-                            <span className="text-yellow-500">&#9733;</span>
-                          ) : (
-                            <span className="text-muted-foreground">&#9734;</span>
-                          )}
+                          <Star
+                            className={cn(
+                              'h-4 w-4 transition-colors',
+                              isFavorite(
+                                favorites,
+                                activeConversation.type as 'channel' | 'contact',
+                                activeConversation.id
+                              )
+                                ? 'text-amber-400 fill-amber-400'
+                                : 'text-muted-foreground'
+                            )}
+                          />
                         </button>
                       )}
-                      {/* Delete button */}
                       {!(
                         activeConversation.type === 'channel' &&
                         activeConversation.name === 'Public'
                       ) && (
                         <button
-                          className="p-1.5 rounded hover:bg-destructive/20 text-destructive text-xl leading-none"
+                          className="p-2 rounded-lg text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-all"
                           onClick={() => {
                             if (activeConversation.type === 'channel') {
                               handleDeleteChannel(activeConversation.id);
@@ -1116,7 +1123,7 @@ export function App() {
                           }}
                           title="Delete"
                         >
-                          &#128465;
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       )}
                     </div>
@@ -1161,17 +1168,22 @@ export function App() {
                 </>
               )
             ) : (
-              <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                Select a conversation or start a new one
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-4xl mb-3 opacity-10">📡</div>
+                  <p className="text-muted-foreground/40 text-sm">
+                    Select a conversation or start a new one
+                  </p>
+                </div>
               </div>
             )}
           </div>
 
           {showSettings && (
             <div className="flex-1 flex flex-col min-h-0">
-              <div className="flex justify-between items-center px-4 py-3 border-b border-border font-medium text-lg">
-                <span>Radio & Settings</span>
-                <span className="text-sm text-muted-foreground hidden md:inline">
+              <div className="flex justify-between items-center px-5 py-3 border-b border-border/50 bg-card/30">
+                <span className="font-semibold text-base">Radio & Settings</span>
+                <span className="text-xs text-muted-foreground/60 hidden md:inline">
                   {SETTINGS_SECTION_LABELS[settingsSection]}
                 </span>
               </div>
@@ -1199,10 +1211,10 @@ export function App() {
         </div>
       </div>
 
-      {/* Global Cracker Panel - always rendered to maintain state */}
+      {/* Global Cracker Panel */}
       <div
         className={cn(
-          'border-t border-border bg-background transition-all duration-200 overflow-hidden',
+          'border-t border-border/50 bg-card/30 transition-all duration-300 overflow-hidden',
           showCracker ? 'h-[275px]' : 'h-0'
         )}
       >

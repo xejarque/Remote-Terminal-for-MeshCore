@@ -12,13 +12,13 @@ export function ContactAvatar({ name, publicKey, size = 28, contactType }: Conta
 
   return (
     <div
-      className="flex items-center justify-center rounded-full font-semibold flex-shrink-0 select-none"
+      className="flex items-center justify-center rounded-full font-semibold flex-shrink-0 select-none ring-1 ring-white/5"
       style={{
         backgroundColor: avatar.background,
         color: avatar.textColor,
         width: size,
         height: size,
-        fontSize: size * 0.45,
+        fontSize: size * 0.42,
       }}
     >
       {avatar.text}

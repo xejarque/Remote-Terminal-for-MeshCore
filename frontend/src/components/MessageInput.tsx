@@ -8,23 +8,19 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from 'react';
-import { Input } from './ui/input';
-import { Button } from './ui/button';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Send, Lock } from 'lucide-react';
 import { toast } from './ui/sonner';
 import { cn } from '@/lib/utils';
 
 // MeshCore message size limits (empirically determined from LoRa packet constraints)
-// Direct delivery allows ~156 bytes; multi-hop requires buffer for path growth.
-// Channels include "sender: " prefix in the encrypted payload.
-// All limits are in bytes (UTF-8), not characters, since LoRa packets are byte-constrained.
-const DM_HARD_LIMIT = 156; // Max bytes for direct delivery
-const DM_WARNING_THRESHOLD = 140; // Conservative for multi-hop
-const CHANNEL_HARD_LIMIT = 156; // Base byte limit before sender overhead
-const CHANNEL_WARNING_THRESHOLD = 120; // Conservative for multi-hop
-const CHANNEL_DANGER_BUFFER = 8; // Red zone starts this many bytes before hard limit
+const DM_HARD_LIMIT = 156;
+const DM_WARNING_THRESHOLD = 140;
+const CHANNEL_HARD_LIMIT = 156;
+const CHANNEL_WARNING_THRESHOLD = 120;
+const CHANNEL_DANGER_BUFFER = 8;
 
 const textEncoder = new TextEncoder();
-/** Get UTF-8 byte length of a string (LoRa packets are byte-constrained, not character-constrained). */
 function byteLen(s: string): number {
   return textEncoder.encode(s).length;
 }
@@ -33,11 +29,8 @@ interface MessageInputProps {
   onSend: (text: string) => Promise<void>;
   disabled: boolean;
   placeholder?: string;
-  /** When true, input becomes password field for repeater telemetry */
   isRepeaterMode?: boolean;
-  /** Conversation type for character limit calculation */
   conversationType?: 'contact' | 'channel' | 'raw';
-  /** Sender name (radio name) for channel message limit calculation */
   senderName?: string;
 }
 
@@ -58,21 +51,18 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
   useImperativeHandle(ref, () => ({
     appendText: (appendedText: string) => {
       setText((prev) => prev + appendedText);
-      // Focus the input after appending
       inputRef.current?.focus();
     },
   }));
 
-  // Calculate character limits based on conversation type
   const limits = useMemo(() => {
     if (conversationType === 'contact') {
       return {
         warningAt: DM_WARNING_THRESHOLD,
-        dangerAt: DM_HARD_LIMIT, // Same as hard limit for DMs (no intermediate red zone)
+        dangerAt: DM_HARD_LIMIT,
         hardLimit: DM_HARD_LIMIT,
       };
     } else if (conversationType === 'channel') {
-      // Channel hard limit = 156 bytes - senderName bytes - 2 (for ": " separator)
       const nameByteLen = senderName ? byteLen(senderName) : 10;
       const hardLimit = Math.max(1, CHANNEL_HARD_LIMIT - nameByteLen - 2);
       return {
@@ -81,13 +71,11 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
         hardLimit,
       };
     }
-    return null; // Raw/other - no limits
+    return null;
   }, [conversationType, senderName]);
 
-  // UTF-8 byte length of the current text (LoRa packets are byte-constrained)
   const textByteLen = useMemo(() => byteLen(text), [text]);
 
-  // Determine current limit state
   const { limitState, warningMessage } = useMemo((): {
     limitState: LimitState;
     warningMessage: string | null;
@@ -95,13 +83,13 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
     if (!limits) return { limitState: 'normal', warningMessage: null };
 
     if (textByteLen >= limits.hardLimit) {
-      return { limitState: 'error', warningMessage: 'likely truncated by radio' };
+      return { limitState: 'error', warningMessage: 'likely truncated' };
     }
     if (textByteLen >= limits.dangerAt) {
-      return { limitState: 'danger', warningMessage: 'may impact multi-repeater hop delivery' };
+      return { limitState: 'danger', warningMessage: 'multi-hop risk' };
     }
     if (textByteLen >= limits.warningAt) {
-      return { limitState: 'warning', warningMessage: 'may impact multi-repeater hop delivery' };
+      return { limitState: 'warning', warningMessage: 'multi-hop risk' };
     }
     return { limitState: 'normal', warningMessage: null };
   }, [textByteLen, limits]);
@@ -113,7 +101,6 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
       e.preventDefault();
       const trimmed = text.trim();
 
-      // For repeater mode, empty password means guest login
       if (isRepeaterMode) {
         if (sending || disabled) return;
         setSending(true);
@@ -129,7 +116,6 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
         } finally {
           setSending(false);
         }
-        // Refocus after React re-enables the input (now in CLI command mode)
         setTimeout(() => inputRef.current?.focus(), 0);
       } else {
         if (!trimmed || sending || disabled) return;
@@ -146,7 +132,6 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
         } finally {
           setSending(false);
         }
-        // Refocus after React re-enables the input
         setTimeout(() => inputRef.current?.focus(), 0);
       }
     },
@@ -163,66 +148,111 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
     [handleSubmit]
   );
 
-  // For repeater mode, always allow submit (empty = guest login)
   const canSubmit = isRepeaterMode ? true : text.trim().length > 0;
-
-  // Show character counter for messages (not repeater mode or raw)
-  const showCharCounter = !isRepeaterMode && limits !== null;
+  const showCharCounter = !isRepeaterMode && limits !== null && textByteLen > 0;
 
   return (
-    <form className="px-4 py-3 border-t border-border flex flex-col gap-1" onSubmit={handleSubmit}>
-      <div className="flex gap-2">
-        <Input
-          ref={inputRef}
-          type={isRepeaterMode ? 'password' : 'text'}
-          autoComplete={isRepeaterMode ? 'off' : undefined}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={
-            placeholder ||
-            (isRepeaterMode ? 'Enter password for admin login...' : 'Type a message...')
-          }
-          disabled={disabled || sending}
-          className="flex-1 min-w-0"
-        />
-        <Button
-          type="submit"
-          disabled={disabled || sending || !canSubmit}
-          className="flex-shrink-0"
-        >
-          {sending
-            ? isRepeaterMode
-              ? 'Logging in...'
-              : 'Sending...'
-            : isRepeaterMode
-              ? text.trim()
-                ? 'Log in with password'
-                : 'Log in as guest/use repeater ACLs'
-              : 'Send'}
-        </Button>
-      </div>
-      {showCharCounter && (
-        <div className="flex items-center justify-end gap-2 text-xs">
-          <span
+    <div className="px-4 py-3 border-t border-border/50">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-2">
+          {/* Input container with glow */}
+          <div
             className={cn(
-              'tabular-nums',
-              limitState === 'error' || limitState === 'danger'
-                ? 'text-red-500 font-medium'
-                : limitState === 'warning'
-                  ? 'text-yellow-500'
-                  : 'text-muted-foreground'
+              'flex-1 relative rounded-xl border transition-all duration-200',
+              disabled
+                ? 'bg-muted/30 border-border/30'
+                : text.length > 0
+                  ? 'bg-secondary/40 border-primary/25 shadow-glow-amber-sm'
+                  : 'bg-secondary/30 border-border/50 focus-within:border-primary/30 focus-within:shadow-glow-amber-sm'
             )}
           >
-            {textByteLen}/{limits!.hardLimit}b{remaining < 0 && ` (${remaining})`}
-          </span>
-          {warningMessage && (
-            <span className={cn(limitState === 'error' ? 'text-red-500' : 'text-yellow-500')}>
-              — {warningMessage}
-            </span>
-          )}
+            {isRepeaterMode && (
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40" />
+            )}
+            <input
+              ref={inputRef}
+              type={isRepeaterMode ? 'password' : 'text'}
+              autoComplete={isRepeaterMode ? 'off' : undefined}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                placeholder ||
+                (isRepeaterMode ? 'Enter password for admin login...' : 'Type a message...')
+              }
+              disabled={disabled || sending}
+              className={cn(
+                'w-full h-10 bg-transparent rounded-xl text-sm placeholder:text-muted-foreground/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-40',
+                isRepeaterMode ? 'pl-9 pr-3' : 'px-4'
+              )}
+            />
+          </div>
+
+          {/* Send button */}
+          <motion.button
+            type="submit"
+            disabled={disabled || sending || !canSubmit}
+            whileTap={{ scale: 0.92 }}
+            className={cn(
+              'h-10 rounded-xl flex items-center justify-center gap-2 font-medium text-sm transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0',
+              isRepeaterMode
+                ? 'px-4 bg-accent/15 text-accent border border-accent/25 hover:bg-accent/25'
+                : canSubmit && !disabled
+                  ? 'px-4 bg-primary text-primary-foreground shadow-glow-amber-sm hover:shadow-glow-amber active:shadow-none'
+                  : 'px-4 bg-secondary text-muted-foreground'
+            )}
+          >
+            {sending ? (
+              <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+            ) : isRepeaterMode ? (
+              <>
+                <Lock className="h-4 w-4" />
+                <span className="hidden sm:inline">{text.trim() ? 'Login' : 'Guest'}</span>
+              </>
+            ) : (
+              <>
+                <Send className="h-4 w-4" />
+                <span className="hidden sm:inline">Send</span>
+              </>
+            )}
+          </motion.button>
         </div>
-      )}
-    </form>
+
+        {/* Character counter */}
+        <AnimatePresence>
+          {showCharCounter && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="flex items-center justify-end gap-2 text-xs overflow-hidden"
+            >
+              <span
+                className={cn(
+                  'tabular-nums font-mono text-[11px]',
+                  limitState === 'error' || limitState === 'danger'
+                    ? 'text-red-400 font-medium'
+                    : limitState === 'warning'
+                      ? 'text-amber-400'
+                      : 'text-muted-foreground/50'
+                )}
+              >
+                {textByteLen}/{limits!.hardLimit}b{remaining < 0 && ` (${remaining})`}
+              </span>
+              {warningMessage && (
+                <span
+                  className={cn(
+                    'text-[11px]',
+                    limitState === 'error' ? 'text-red-400' : 'text-amber-400/70'
+                  )}
+                >
+                  {warningMessage}
+                </span>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </form>
+    </div>
   );
 });

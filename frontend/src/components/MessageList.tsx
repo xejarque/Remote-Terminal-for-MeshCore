@@ -7,6 +7,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronDown } from 'lucide-react';
 import type { Contact, Message, MessagePath, RadioConfig } from '../types';
 import { CONTACT_TYPE_REPEATER } from '../types';
 import { formatTime, parseSenderFromText } from '../utils/messageParser';
@@ -49,7 +51,7 @@ function linkifyText(text: string, keyPrefix: string): ReactNode[] {
         href={match[0]}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-primary underline hover:text-primary/80"
+        className="text-accent underline decoration-accent/40 hover:decoration-accent hover:text-accent/80 transition-colors"
       >
         {match[0]}
       </a>
@@ -73,7 +75,6 @@ function renderTextWithMentions(text: string, radioName?: string): ReactNode {
   let keyIndex = 0;
 
   while ((match = mentionPattern.exec(text)) !== null) {
-    // Add text before the match (with linkification)
     if (match.index > lastIndex) {
       parts.push(...linkifyText(text.slice(lastIndex, match.index), `pre-${keyIndex}`));
     }
@@ -85,18 +86,19 @@ function renderTextWithMentions(text: string, radioName?: string): ReactNode {
       <span
         key={`mention-${keyIndex++}`}
         className={cn(
-          'rounded px-0.5',
-          isOwnMention ? 'bg-primary/30 text-primary font-medium' : 'bg-muted-foreground/20'
+          'rounded-md px-1 py-0.5 text-[13px]',
+          isOwnMention
+            ? 'bg-primary/20 text-primary font-semibold ring-1 ring-primary/30'
+            : 'bg-accent/10 text-accent/80'
         )}
       >
-        @[{mentionedName}]
+        @{mentionedName}
       </span>
     );
 
     lastIndex = match.index + match[0].length;
   }
 
-  // Add remaining text after last match (with linkification)
   if (lastIndex < text.length) {
     parts.push(...linkifyText(text.slice(lastIndex), `post-${keyIndex}`));
   }
@@ -104,7 +106,7 @@ function renderTextWithMentions(text: string, radioName?: string): ReactNode {
   return parts.length > 0 ? parts : text;
 }
 
-// Clickable hop count badge that opens the path modal
+// Clickable hop count badge
 interface HopCountBadgeProps {
   paths: MessagePath[];
   onClick: () => void;
@@ -113,16 +115,16 @@ interface HopCountBadgeProps {
 
 function HopCountBadge({ paths, onClick, variant }: HopCountBadgeProps) {
   const hopInfo = formatHopCounts(paths);
-  const label = `(${hopInfo.display})`;
-
-  const className =
-    variant === 'header'
-      ? 'font-normal text-muted-foreground/70 ml-1 text-[11px] cursor-pointer hover:text-primary hover:underline'
-      : 'text-[10px] text-muted-foreground/50 ml-1 cursor-pointer hover:text-primary hover:underline';
+  const label = hopInfo.display;
 
   return (
     <span
-      className={className}
+      className={cn(
+        'cursor-pointer transition-colors',
+        variant === 'header'
+          ? 'ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-accent/10 text-accent/60 hover:text-accent hover:bg-accent/15'
+          : 'ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground/50 hover:text-accent hover:bg-accent/10'
+      )}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
@@ -154,45 +156,35 @@ export function MessageList({
     senderInfo: SenderInfo;
   } | null>(null);
 
-  // Capture scroll state in the scroll handler BEFORE any state updates
   const scrollStateRef = useRef({
     scrollTop: 0,
     scrollHeight: 0,
     clientHeight: 0,
     wasNearTop: false,
-    wasNearBottom: true, // Default to true so initial messages scroll to bottom
+    wasNearBottom: true,
   });
 
-  // Track conversation key to detect when entire message set changes
   const prevConvKeyRef = useRef<string | null>(null);
 
-  // Handle scroll position AFTER render
   useLayoutEffect(() => {
     if (!listRef.current) return;
 
     const list = listRef.current;
     const messagesAdded = messages.length - prevMessagesLengthRef.current;
 
-    // Detect if messages are from a different conversation (handles the case where
-    // the key prop remount consumes isInitialLoadRef on stale data from the previous
-    // conversation before the cache restore effect sets the correct messages)
     const convKey = messages.length > 0 ? messages[0].conversation_key : null;
     const conversationChanged = convKey !== null && convKey !== prevConvKeyRef.current;
     if (convKey !== null) prevConvKeyRef.current = convKey;
 
     if ((isInitialLoadRef.current || conversationChanged) && messages.length > 0) {
-      // Initial load or conversation switch - scroll to bottom
       list.scrollTop = list.scrollHeight;
       isInitialLoadRef.current = false;
     } else if (messagesAdded > 0 && prevMessagesLengthRef.current > 0) {
-      // Messages were added - use scroll state captured before the update
       const scrollHeightDiff = list.scrollHeight - scrollStateRef.current.scrollHeight;
 
       if (scrollStateRef.current.wasNearTop && scrollHeightDiff > 0) {
-        // User was near top (loading older) - preserve position by adding the height diff
         list.scrollTop = scrollStateRef.current.scrollTop + scrollHeightDiff;
       } else if (scrollStateRef.current.wasNearBottom) {
-        // User was near bottom - scroll to bottom for new messages (including sent)
         list.scrollTop = list.scrollHeight;
       }
     }
@@ -200,7 +192,6 @@ export function MessageList({
     prevMessagesLengthRef.current = messages.length;
   }, [messages]);
 
-  // Reset initial load flag when conversation changes (messages becomes empty then filled)
   useEffect(() => {
     if (messages.length === 0) {
       isInitialLoadRef.current = true;
@@ -216,14 +207,12 @@ export function MessageList({
     }
   }, [messages.length]);
 
-  // Handle scroll - capture state and detect when user is near top/bottom
   const handleScroll = useCallback(() => {
     if (!listRef.current) return;
 
     const { scrollTop, scrollHeight, clientHeight } = listRef.current;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
 
-    // Always capture current scroll state (needed for scroll preservation)
     scrollStateRef.current = {
       scrollTop,
       scrollHeight,
@@ -232,44 +221,35 @@ export function MessageList({
       wasNearBottom: distanceFromBottom < 100,
     };
 
-    // Show scroll-to-bottom button when not near the bottom (more than 100px away)
     setShowScrollToBottom(distanceFromBottom > 100);
 
     if (!onLoadOlder || loadingOlder || !hasOlderMessages) return;
 
-    // Trigger load when within 100px of top
     if (scrollTop < 100) {
       onLoadOlder();
     }
   }, [onLoadOlder, loadingOlder, hasOlderMessages]);
 
-  // Scroll to bottom handler
   const scrollToBottom = useCallback(() => {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
   }, []);
 
-  // Sort messages by received_at ascending (oldest first)
-  // Note: Deduplication is handled by useConversationMessages.addMessageIfNew()
-  // and the database UNIQUE constraint on (type, conversation_key, text, sender_timestamp)
   const sortedMessages = useMemo(
     () => [...messages].sort((a, b) => a.received_at - b.received_at),
     [messages]
   );
 
-  // Look up contact by public key
   const getContact = (conversationKey: string | null): Contact | null => {
     if (!conversationKey) return null;
     return contacts.find((c) => c.public_key === conversationKey) || null;
   };
 
-  // Look up contact by name (for channel messages where we parse sender from text)
   const getContactByName = (name: string): Contact | null => {
     return contacts.find((c) => c.name === name) || null;
   };
 
-  // Build sender info for path modal
   const getSenderInfo = (
     msg: Message,
     contact: Contact | null,
@@ -283,7 +263,6 @@ export function MessageList({
         lon: contact.lon,
       };
     }
-    // For channel messages, try to find contact by parsed sender name
     if (parsedSender) {
       const senderContact = getContactByName(parsedSender);
       if (senderContact) {
@@ -295,7 +274,6 @@ export function MessageList({
         };
       }
     }
-    // Fallback: unknown sender
     return {
       name: parsedSender || 'Unknown',
       publicKeyOrPrefix: msg.conversation_key || '',
@@ -306,21 +284,26 @@ export function MessageList({
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-y-auto p-5 text-center text-muted-foreground">
-        Loading messages...
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+          <span className="text-sm text-muted-foreground">Loading messages...</span>
+        </div>
       </div>
     );
   }
 
   if (messages.length === 0) {
     return (
-      <div className="flex-1 overflow-y-auto p-5 text-center text-muted-foreground">
-        No messages yet
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-3xl mb-2 opacity-20">💬</div>
+          <span className="text-sm text-muted-foreground/60">No messages yet</span>
+        </div>
       </div>
     );
   }
 
-  // Helper to get a unique sender key for grouping messages
   const getSenderKey = (msg: Message, sender: string | null): string => {
     if (msg.outgoing) return '__outgoing__';
     if (msg.type === 'PRIV' && msg.conversation_key) return msg.conversation_key;
@@ -330,26 +313,24 @@ export function MessageList({
   return (
     <div className="flex-1 overflow-hidden relative">
       <div
-        className="h-full overflow-y-auto p-4 flex flex-col gap-0.5"
+        className="h-full overflow-y-auto px-4 py-3 flex flex-col gap-0.5"
         ref={listRef}
         onScroll={handleScroll}
       >
         {loadingOlder && (
-          <div className="text-center py-2 text-muted-foreground text-sm">
-            Loading older messages...
+          <div className="flex justify-center py-3">
+            <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
           </div>
         )}
         {!loadingOlder && hasOlderMessages && (
-          <div className="text-center py-2 text-muted-foreground text-xs">
+          <div className="text-center py-2 text-muted-foreground/40 text-xs">
             Scroll up for older messages
           </div>
         )}
         {sortedMessages.map((msg, index) => {
-          // For DMs, look up contact; for channel messages, use parsed sender
           const contact = msg.type === 'PRIV' ? getContact(msg.conversation_key) : null;
           const isRepeater = contact?.type === CONTACT_TYPE_REPEATER;
 
-          // Skip sender parsing for repeater messages (CLI responses often have colons)
           const { sender, content } = isRepeater
             ? { sender: null, content: msg.text }
             : parseSenderFromText(msg.text);
@@ -359,7 +340,6 @@ export function MessageList({
 
           const canClickSender = !msg.outgoing && onSenderClick && displaySender !== 'Unknown';
 
-          // Determine if we should show avatar (first message in a chunk from same sender)
           const currentSenderKey = getSenderKey(msg, sender);
           const prevMsg = sortedMessages[index - 1];
           const prevSenderKey = prevMsg
@@ -368,16 +348,13 @@ export function MessageList({
           const showAvatar = !msg.outgoing && currentSenderKey !== prevSenderKey;
           const isFirstMessage = index === 0;
 
-          // Get avatar info for incoming messages
           let avatarName: string | null = null;
           let avatarKey: string = '';
           if (!msg.outgoing) {
             if (msg.type === 'PRIV' && msg.conversation_key) {
-              // DM: use conversation_key (sender's public key)
               avatarName = contact?.name || null;
               avatarKey = msg.conversation_key;
             } else if (sender) {
-              // Channel message: try to find contact by name, or use sender name as pseudo-key
               const senderContact = getContactByName(sender);
               avatarName = sender;
               avatarKey = senderContact?.public_key || `name:${sender}`;
@@ -390,36 +367,40 @@ export function MessageList({
               className={cn(
                 'flex items-start max-w-[85%]',
                 msg.outgoing && 'flex-row-reverse self-end',
-                showAvatar && !isFirstMessage && 'mt-3'
+                showAvatar && !isFirstMessage && 'mt-4'
               )}
             >
               {!msg.outgoing && (
-                <div className="w-10 flex-shrink-0 flex items-start pt-0.5">
+                <div className="w-9 flex-shrink-0 flex items-start pt-0.5">
                   {showAvatar && avatarKey && (
-                    <ContactAvatar name={avatarName} publicKey={avatarKey} size={32} />
+                    <ContactAvatar name={avatarName} publicKey={avatarKey} size={30} />
                   )}
                 </div>
               )}
               <div
                 className={cn(
-                  'py-1.5 px-3 rounded-lg min-w-0',
-                  msg.outgoing ? 'bg-[#1e3a29]' : 'bg-muted'
+                  'py-2 px-3 rounded-2xl min-w-0 relative',
+                  msg.outgoing
+                    ? 'bg-gradient-to-br from-primary/20 to-primary/10 border border-primary/15'
+                    : 'bg-secondary/60 border border-border/30'
                 )}
               >
                 {showAvatar && (
-                  <div className="text-[13px] font-semibold text-muted-foreground mb-0.5">
-                    {canClickSender ? (
-                      <span
-                        className="cursor-pointer hover:text-primary hover:underline"
-                        onClick={() => onSenderClick(displaySender)}
-                        title={`Mention ${displaySender}`}
-                      >
-                        {displaySender}
-                      </span>
-                    ) : (
-                      displaySender
-                    )}
-                    <span className="font-normal text-muted-foreground/70 ml-2 text-[11px]">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="text-[13px] font-semibold">
+                      {canClickSender ? (
+                        <span
+                          className="cursor-pointer hover:text-primary transition-colors"
+                          onClick={() => onSenderClick(displaySender)}
+                          title={`Mention ${displaySender}`}
+                        >
+                          {displaySender}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">{displaySender}</span>
+                      )}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground/40">
                       {formatTime(msg.sender_timestamp || msg.received_at)}
                     </span>
                     {!msg.outgoing && msg.paths && msg.paths.length > 0 && (
@@ -436,7 +417,7 @@ export function MessageList({
                     )}
                   </div>
                 )}
-                <div className="break-words whitespace-pre-wrap">
+                <div className="break-words whitespace-pre-wrap text-[14px] leading-relaxed">
                   {content.split('\n').map((line, i, arr) => (
                     <span key={i}>
                       {renderTextWithMentions(line, radioName)}
@@ -445,7 +426,7 @@ export function MessageList({
                   ))}
                   {!showAvatar && (
                     <>
-                      <span className="text-[10px] text-muted-foreground/50 ml-2">
+                      <span className="text-[10px] text-muted-foreground/30 ml-2">
                         {formatTime(msg.sender_timestamp || msg.received_at)}
                       </span>
                       {!msg.outgoing && msg.paths && msg.paths.length > 0 && (
@@ -466,7 +447,7 @@ export function MessageList({
                     (msg.acked > 0 ? (
                       msg.paths && msg.paths.length > 0 ? (
                         <span
-                          className="cursor-pointer hover:text-primary"
+                          className="ml-1.5 text-[11px] text-emerald-400/70 cursor-pointer hover:text-emerald-400 transition-colors"
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedPath({
@@ -480,12 +461,22 @@ export function MessageList({
                             });
                           }}
                           title="View echo paths"
-                        >{` ✓${msg.acked > 1 ? msg.acked : ''}`}</span>
+                        >
+                          {` ✓${msg.acked > 1 ? msg.acked : ''}`}
+                        </span>
                       ) : (
-                        ` ✓${msg.acked > 1 ? msg.acked : ''}`
+                        <span className="ml-1.5 text-[11px] text-emerald-400/70">
+                          {` ✓${msg.acked > 1 ? msg.acked : ''}`}
+                        </span>
                       )
                     ) : (
-                      <span title="No repeats heard yet"> ?</span>
+                      <span
+                        className="ml-1.5 text-[11px] text-muted-foreground/30"
+                        title="No repeats heard yet"
+                      >
+                        {' '}
+                        ?
+                      </span>
                     ))}
                 </div>
               </div>
@@ -495,28 +486,20 @@ export function MessageList({
       </div>
 
       {/* Scroll to bottom button */}
-      {showScrollToBottom && (
-        <button
-          onClick={scrollToBottom}
-          className="absolute bottom-4 right-4 w-10 h-10 rounded-full bg-muted hover:bg-accent border border-border flex items-center justify-center shadow-lg transition-opacity"
-          title="Scroll to bottom"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-muted-foreground"
+      <AnimatePresence>
+        {showScrollToBottom && (
+          <motion.button
+            initial={{ opacity: 0, y: 10, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.9 }}
+            onClick={scrollToBottom}
+            className="absolute bottom-4 right-4 w-10 h-10 rounded-full bg-card border border-border/50 flex items-center justify-center shadow-lg hover:bg-secondary transition-all hover:border-primary/30"
+            title="Scroll to bottom"
           >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
-      )}
+            <ChevronDown className="h-5 w-5 text-muted-foreground" />
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       {/* Path modal */}
       {selectedPath && (

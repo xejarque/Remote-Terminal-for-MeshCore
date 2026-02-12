@@ -1,4 +1,17 @@
 import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Radio,
+  Map,
+  Sparkles,
+  KeyRound,
+  CheckCheck,
+  Search,
+  X,
+  Star,
+  Hash,
+  User,
+} from 'lucide-react';
 import {
   CONTACT_TYPE_REPEATER,
   type Contact,
@@ -10,8 +23,6 @@ import { getStateKey, type ConversationTimes } from '../utils/conversationState'
 import { getContactDisplayName } from '../utils/pubkey';
 import { ContactAvatar } from './ContactAvatar';
 import { isFavorite } from '../utils/favorites';
-import { Input } from './ui/input';
-import { Button } from './ui/button';
 import { cn } from '@/lib/utils';
 
 type SortOrder = 'alpha' | 'recent';
@@ -24,16 +35,13 @@ interface SidebarProps {
   onNewMessage: () => void;
   lastMessageTimes: ConversationTimes;
   unreadCounts: Record<string, number>;
-  /** Tracks which conversations have unread messages that mention the user */
   mentions: Record<string, boolean>;
   showCracker: boolean;
   crackerRunning: boolean;
   onToggleCracker: () => void;
   onMarkAllRead: () => void;
   favorites: Favorite[];
-  /** Sort order from server settings */
   sortOrder?: SortOrder;
-  /** Callback when sort order changes */
   onSortOrderChange?: (order: SortOrder) => void;
 }
 
@@ -70,13 +78,11 @@ export function Sidebar({
   const isActive = (type: 'contact' | 'channel' | 'raw' | 'map' | 'visualizer', id: string) =>
     activeConversation?.type === type && activeConversation?.id === id;
 
-  // Get unread count for a conversation
   const getUnreadCount = (type: 'channel' | 'contact', id: string): number => {
     const key = getStateKey(type, id);
     return unreadCounts[key] || 0;
   };
 
-  // Check if a conversation has a mention
   const hasMention = (type: 'channel' | 'contact', id: string): boolean => {
     const key = getStateKey(type, id);
     return mentions[key] || false;
@@ -87,7 +93,7 @@ export function Sidebar({
     return lastMessageTimes[key] || 0;
   };
 
-  // Deduplicate channels by name, keeping the first (lowest index)
+  // Deduplicate channels by name
   const uniqueChannels = channels.reduce<Channel[]>((acc, channel) => {
     if (!acc.some((c) => c.name === channel.name)) {
       acc.push(channel);
@@ -95,12 +101,10 @@ export function Sidebar({
     return acc;
   }, []);
 
-  // Deduplicate contacts by public key, preferring ones with names
-  // Also filter out any contacts with empty public keys
+  // Deduplicate contacts by public key
   const uniqueContacts = contacts
     .filter((c) => c.public_key && c.public_key.length > 0)
     .sort((a, b) => {
-      // Sort contacts with names first
       if (a.name && !b.name) return -1;
       if (!a.name && b.name) return 1;
       return (a.name || '').localeCompare(b.name || '');
@@ -112,54 +116,40 @@ export function Sidebar({
       return acc;
     }, []);
 
-  // Sort channels based on sort order, with Public always first
+  // Sort channels
   const sortedChannels = [...uniqueChannels].sort((a, b) => {
-    // Public channel always sorts to the top
     if (a.name === 'Public') return -1;
     if (b.name === 'Public') return 1;
-
     if (sortOrder === 'recent') {
       const timeA = getLastMessageTime('channel', a.key);
       const timeB = getLastMessageTime('channel', b.key);
-      // If both have messages, sort by most recent first
       if (timeA && timeB) return timeB - timeA;
-      // Items with messages come before items without
       if (timeA && !timeB) return -1;
       if (!timeA && timeB) return 1;
-      // Fall back to alpha for items without messages
     }
     return a.name.localeCompare(b.name);
   });
 
-  // Sort contacts: non-repeaters first (by recent or alpha), then repeaters (always alpha)
+  // Sort contacts
   const sortedContacts = [...uniqueContacts].sort((a, b) => {
     const aIsRepeater = a.type === CONTACT_TYPE_REPEATER;
     const bIsRepeater = b.type === CONTACT_TYPE_REPEATER;
-
-    // Repeaters always go to the bottom
     if (aIsRepeater && !bIsRepeater) return 1;
     if (!aIsRepeater && bIsRepeater) return -1;
-
-    // Both repeaters: always sort alphabetically
     if (aIsRepeater && bIsRepeater) {
       return (a.name || a.public_key).localeCompare(b.name || b.public_key);
     }
-
-    // Both non-repeaters: use selected sort order
     if (sortOrder === 'recent') {
       const timeA = getLastMessageTime('contact', a.public_key);
       const timeB = getLastMessageTime('contact', b.public_key);
-      // If both have messages, sort by most recent first
       if (timeA && timeB) return timeB - timeA;
-      // Items with messages come before items without
       if (timeA && !timeB) return -1;
       if (!timeA && timeB) return 1;
-      // Fall back to alpha for items without messages
     }
     return (a.name || a.public_key).localeCompare(b.name || b.public_key);
   });
 
-  // Filter by search query
+  // Filter by search
   const query = searchQuery.toLowerCase().trim();
   const filteredChannels = query
     ? sortedChannels.filter(
@@ -172,7 +162,7 @@ export function Sidebar({
       )
     : sortedContacts;
 
-  // Separate favorites from regular items
+  // Separate favorites
   const favoriteChannels = filteredChannels.filter((c) => isFavorite(favorites, 'channel', c.key));
   const favoriteContacts = filteredContacts.filter((c) =>
     isFavorite(favorites, 'contact', c.public_key)
@@ -184,7 +174,6 @@ export function Sidebar({
     (c) => !isFavorite(favorites, 'contact', c.public_key)
   );
 
-  // Combine and sort favorites by most recent message (always recent order)
   type FavoriteItem = { type: 'channel'; channel: Channel } | { type: 'contact'; contact: Contact };
 
   const favoriteItems: FavoriteItem[] = [
@@ -199,168 +188,216 @@ export function Sidebar({
       b.type === 'channel'
         ? getLastMessageTime('channel', b.channel.key)
         : getLastMessageTime('contact', b.contact.public_key);
-    // Sort by most recent first
     if (timeA && timeB) return timeB - timeA;
     if (timeA && !timeB) return -1;
     if (!timeA && timeB) return 1;
-    // Fall back to name comparison
     const nameA = a.type === 'channel' ? a.channel.name : a.contact.name || a.contact.public_key;
     const nameB = b.type === 'channel' ? b.channel.name : b.contact.name || b.contact.public_key;
     return nameA.localeCompare(nameB);
   });
 
+  // Unread badge component
+  const UnreadBadge = ({ count, isMentionBadge }: { count: number; isMentionBadge: boolean }) => (
+    <motion.span
+      initial={{ scale: 0 }}
+      animate={{ scale: 1 }}
+      className={cn(
+        'text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none',
+        isMentionBadge
+          ? 'bg-destructive text-destructive-foreground shadow-[0_0_8px_hsl(0_72%_51%/0.4)]'
+          : 'bg-primary text-primary-foreground shadow-glow-amber-sm'
+      )}
+    >
+      {count}
+    </motion.span>
+  );
+
+  // Conversation item component
+  const ConversationItem = ({
+    active,
+    unreadCount,
+    isMentionItem,
+    onClick,
+    icon,
+    children,
+  }: {
+    active: boolean;
+    unreadCount?: number;
+    isMentionItem?: boolean;
+    onClick: () => void;
+    icon?: React.ReactNode;
+    children: React.ReactNode;
+  }) => (
+    <div
+      className={cn(
+        'group px-3 py-2 cursor-pointer flex items-center gap-2.5 rounded-lg mx-1.5 my-0.5 transition-all duration-150',
+        active
+          ? 'bg-primary/10 border border-primary/20 shadow-glow-amber-sm'
+          : 'border border-transparent hover:bg-secondary/60',
+        (unreadCount ?? 0) > 0 && !active && 'bg-secondary/30'
+      )}
+      onClick={onClick}
+    >
+      {icon}
+      <span
+        className={cn(
+          'flex-1 truncate text-sm transition-colors',
+          active ? 'text-foreground font-medium' : 'text-foreground/70 group-hover:text-foreground',
+          (unreadCount ?? 0) > 0 && 'text-foreground font-semibold'
+        )}
+      >
+        {children}
+      </span>
+      {(unreadCount ?? 0) > 0 && (
+        <UnreadBadge count={unreadCount!} isMentionBadge={isMentionItem ?? false} />
+      )}
+    </div>
+  );
+
   return (
-    <div className="sidebar w-60 h-full min-h-0 bg-card border-r border-border flex flex-col">
+    <div className="sidebar w-64 h-full min-h-0 bg-card/50 backdrop-blur-sm border-r border-border/50 flex flex-col">
       {/* Header */}
-      <div className="flex justify-between items-center px-3 py-3 border-b border-border">
-        <h2 className="text-xs uppercase text-muted-foreground font-medium">Conversations</h2>
-        <Button
-          variant="ghost"
-          size="sm"
+      <div className="flex justify-between items-center px-4 py-3 border-b border-border/50">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Conversations
+        </span>
+        <button
           onClick={onNewMessage}
-          title="New Message"
-          className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+          title="New Conversation"
+          className="h-7 w-7 flex items-center justify-center rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-all text-lg font-light"
         >
           +
-        </Button>
+        </button>
       </div>
 
       {/* Search */}
-      <div className="relative px-3 py-2 border-b border-border">
-        <Input
-          type="text"
-          placeholder="Search..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="h-8 text-sm pr-8"
-        />
-        {searchQuery && (
-          <button
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-lg leading-none"
-            onClick={() => setSearchQuery('')}
-            title="Clear search"
-          >
-            ×
-          </button>
-        )}
+      <div className="px-3 py-2 border-b border-border/50">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+          <input
+            type="text"
+            placeholder="Search..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full h-8 pl-8 pr-8 text-sm bg-secondary/40 border border-border/50 rounded-lg placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/30 focus:bg-secondary/60 transition-all"
+          />
+          <AnimatePresence>
+            {searchQuery && (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.5 }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setSearchQuery('')}
+                title="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </motion.button>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
-      {/* List */}
-      <div className="flex-1 overflow-y-auto">
-        {/* Raw Packet Feed */}
-        {!query && (
-          <div
-            className={cn(
-              'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-              isActive('raw', 'raw') && 'bg-accent border-l-primary'
-            )}
-            onClick={() =>
-              handleSelectConversation({
-                type: 'raw',
-                id: 'raw',
-                name: 'Raw Packet Feed',
-              })
-            }
-          >
-            <span className="text-muted-foreground text-xs">📡</span>
-            <span className="flex-1 truncate">Packet Feed</span>
-          </div>
-        )}
+      {/* Quick nav - special views */}
+      {!query && (
+        <div className="flex items-center gap-1 px-3 py-2 border-b border-border/50">
+          {[
+            {
+              type: 'raw' as const,
+              id: 'raw',
+              name: 'Raw Packet Feed',
+              icon: Radio,
+              title: 'Packet Feed',
+            },
+            { type: 'map' as const, id: 'map', name: 'Node Map', icon: Map, title: 'Node Map' },
+            {
+              type: 'visualizer' as const,
+              id: 'visualizer',
+              name: 'Mesh Visualizer',
+              icon: Sparkles,
+              title: 'Visualizer',
+            },
+          ].map((view) => (
+            <button
+              key={view.id}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs transition-all',
+                isActive(view.type, view.id)
+                  ? 'bg-primary/15 text-primary border border-primary/20'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+              )}
+              onClick={() =>
+                handleSelectConversation({
+                  type: view.type,
+                  id: view.id,
+                  name: view.name,
+                })
+              }
+              title={view.title}
+            >
+              <view.icon className="h-3.5 w-3.5" />
+              <span className="hidden xl:inline">{view.title.split(' ')[0]}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
-        {/* Node Map */}
-        {!query && (
-          <div
+      {/* Cracker + Mark all read */}
+      {!query && (
+        <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border/50">
+          <button
             className={cn(
-              'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-              isActive('map', 'map') && 'bg-accent border-l-primary'
-            )}
-            onClick={() =>
-              handleSelectConversation({
-                type: 'map',
-                id: 'map',
-                name: 'Node Map',
-              })
-            }
-          >
-            <span className="text-muted-foreground text-xs">🗺️</span>
-            <span className="flex-1 truncate">Node Map</span>
-          </div>
-        )}
-
-        {/* Mesh Visualizer */}
-        {!query && (
-          <div
-            className={cn(
-              'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-              isActive('visualizer', 'visualizer') && 'bg-accent border-l-primary'
-            )}
-            onClick={() =>
-              handleSelectConversation({
-                type: 'visualizer',
-                id: 'visualizer',
-                name: 'Mesh Visualizer',
-              })
-            }
-          >
-            <span className="text-muted-foreground text-xs">✨</span>
-            <span className="flex-1 truncate">Mesh Visualizer</span>
-          </div>
-        )}
-
-        {/* Cracker Toggle */}
-        {!query && (
-          <div
-            className={cn(
-              'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-              showCracker && 'bg-accent border-l-primary'
+              'flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs transition-all',
+              showCracker
+                ? 'bg-primary/15 text-primary border border-primary/20'
+                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
             )}
             onClick={onToggleCracker}
+            title="Room Finder"
           >
-            <span className="text-muted-foreground text-xs">🔓</span>
-            <span className="flex-1 truncate">
-              {showCracker ? 'Hide' : 'Show'} Room Finder
-              <span
-                className={cn(
-                  'ml-1 text-xs',
-                  crackerRunning ? 'text-green-500' : 'text-muted-foreground'
-                )}
-              >
-                ({crackerRunning ? 'running' : 'stopped'})
-              </span>
+            <KeyRound className="h-3.5 w-3.5" />
+            <span className="truncate">
+              Finder
+              {crackerRunning && (
+                <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              )}
             </span>
-          </div>
-        )}
+          </button>
+          {Object.keys(unreadCounts).length > 0 && (
+            <button
+              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-all"
+              onClick={onMarkAllRead}
+              title="Mark all as read"
+            >
+              <CheckCheck className="h-3.5 w-3.5" />
+              <span className="truncate">Read all</span>
+            </button>
+          )}
+        </div>
+      )}
 
-        {/* Mark All Read */}
-        {!query && Object.keys(unreadCounts).length > 0 && (
-          <div
-            className="px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent"
-            onClick={onMarkAllRead}
-          >
-            <span className="text-muted-foreground text-xs">✓</span>
-            <span className="flex-1 truncate text-muted-foreground">Mark all as read</span>
-          </div>
-        )}
-
+      {/* Conversation list */}
+      <div className="flex-1 overflow-y-auto py-1">
         {/* Favorites */}
         {favoriteItems.length > 0 && (
           <>
-            <div className="flex justify-between items-center px-3 py-2 pt-3">
-              <span className="text-[11px] uppercase text-muted-foreground">Favorites</span>
+            <div className="flex items-center gap-1.5 px-4 py-2 pt-2.5">
+              <Star className="h-3 w-3 text-amber-400/60" />
+              <span className="text-[11px] uppercase tracking-wider font-medium text-amber-400/60">
+                Favorites
+              </span>
             </div>
             {favoriteItems.map((item) => {
               if (item.type === 'channel') {
                 const channel = item.channel;
-                const unreadCount = getUnreadCount('channel', channel.key);
-                const isMention = hasMention('channel', channel.key);
+                const count = getUnreadCount('channel', channel.key);
+                const mention = hasMention('channel', channel.key);
                 return (
-                  <div
+                  <ConversationItem
                     key={`fav-chan-${channel.key}`}
-                    className={cn(
-                      'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-                      isActive('channel', channel.key) && 'bg-accent border-l-primary',
-                      unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
-                    )}
+                    active={isActive('channel', channel.key)}
+                    unreadCount={count}
+                    isMentionItem={mention}
                     onClick={() =>
                       handleSelectConversation({
                         type: 'channel',
@@ -368,34 +405,21 @@ export function Sidebar({
                         name: channel.name,
                       })
                     }
+                    icon={<Hash className="h-4 w-4 text-muted-foreground/50 flex-shrink-0" />}
                   >
-                    <span className="name flex-1 truncate">{channel.name}</span>
-                    {unreadCount > 0 && (
-                      <span
-                        className={cn(
-                          'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
-                          isMention
-                            ? 'bg-destructive text-destructive-foreground'
-                            : 'bg-primary text-primary-foreground'
-                        )}
-                      >
-                        {unreadCount}
-                      </span>
-                    )}
-                  </div>
+                    {channel.name}
+                  </ConversationItem>
                 );
               } else {
                 const contact = item.contact;
-                const unreadCount = getUnreadCount('contact', contact.public_key);
-                const isMention = hasMention('contact', contact.public_key);
+                const count = getUnreadCount('contact', contact.public_key);
+                const mention = hasMention('contact', contact.public_key);
                 return (
-                  <div
+                  <ConversationItem
                     key={`fav-contact-${contact.public_key}`}
-                    className={cn(
-                      'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-                      isActive('contact', contact.public_key) && 'bg-accent border-l-primary',
-                      unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
-                    )}
+                    active={isActive('contact', contact.public_key)}
+                    unreadCount={count}
+                    isMentionItem={mention}
                     onClick={() =>
                       handleSelectConversation({
                         type: 'contact',
@@ -403,29 +427,17 @@ export function Sidebar({
                         name: getContactDisplayName(contact.name, contact.public_key),
                       })
                     }
+                    icon={
+                      <ContactAvatar
+                        name={contact.name}
+                        publicKey={contact.public_key}
+                        size={22}
+                        contactType={contact.type}
+                      />
+                    }
                   >
-                    <ContactAvatar
-                      name={contact.name}
-                      publicKey={contact.public_key}
-                      size={24}
-                      contactType={contact.type}
-                    />
-                    <span className="name flex-1 truncate">
-                      {getContactDisplayName(contact.name, contact.public_key)}
-                    </span>
-                    {unreadCount > 0 && (
-                      <span
-                        className={cn(
-                          'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
-                          isMention
-                            ? 'bg-destructive text-destructive-foreground'
-                            : 'bg-primary text-primary-foreground'
-                        )}
-                      >
-                        {unreadCount}
-                      </span>
-                    )}
-                  </div>
+                    {getContactDisplayName(contact.name, contact.public_key)}
+                  </ConversationItem>
                 );
               }
             })}
@@ -435,27 +447,30 @@ export function Sidebar({
         {/* Channels */}
         {nonFavoriteChannels.length > 0 && (
           <>
-            <div className="flex justify-between items-center px-3 py-2 pt-3">
-              <span className="text-[11px] uppercase text-muted-foreground">Channels</span>
+            <div className="flex justify-between items-center px-4 py-2 pt-3">
+              <div className="flex items-center gap-1.5">
+                <Hash className="h-3 w-3 text-muted-foreground/40" />
+                <span className="text-[11px] uppercase tracking-wider font-medium text-muted-foreground/60">
+                  Channels
+                </span>
+              </div>
               <button
-                className="bg-transparent border border-border text-muted-foreground px-1.5 py-0.5 text-[10px] rounded hover:bg-accent hover:text-foreground"
+                className="text-[10px] px-1.5 py-0.5 rounded bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary transition-all"
                 onClick={handleSortToggle}
                 title={sortOrder === 'alpha' ? 'Sort by recent' : 'Sort alphabetically'}
               >
-                {sortOrder === 'alpha' ? 'A-Z' : '⏱'}
+                {sortOrder === 'alpha' ? 'A-Z' : 'Recent'}
               </button>
             </div>
             {nonFavoriteChannels.map((channel) => {
-              const unreadCount = getUnreadCount('channel', channel.key);
-              const isMention = hasMention('channel', channel.key);
+              const count = getUnreadCount('channel', channel.key);
+              const mention = hasMention('channel', channel.key);
               return (
-                <div
+                <ConversationItem
                   key={`chan-${channel.key}`}
-                  className={cn(
-                    'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-                    isActive('channel', channel.key) && 'bg-accent border-l-primary',
-                    unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
-                  )}
+                  active={isActive('channel', channel.key)}
+                  unreadCount={count}
+                  isMentionItem={mention}
                   onClick={() =>
                     handleSelectConversation({
                       type: 'channel',
@@ -463,21 +478,10 @@ export function Sidebar({
                       name: channel.name,
                     })
                   }
+                  icon={<Hash className="h-4 w-4 text-muted-foreground/50 flex-shrink-0" />}
                 >
-                  <span className="name flex-1 truncate">{channel.name}</span>
-                  {unreadCount > 0 && (
-                    <span
-                      className={cn(
-                        'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
-                        isMention
-                          ? 'bg-destructive text-destructive-foreground'
-                          : 'bg-primary text-primary-foreground'
-                      )}
-                    >
-                      {unreadCount}
-                    </span>
-                  )}
-                </div>
+                  {channel.name}
+                </ConversationItem>
               );
             })}
           </>
@@ -486,29 +490,32 @@ export function Sidebar({
         {/* Contacts */}
         {nonFavoriteContacts.length > 0 && (
           <>
-            <div className="flex justify-between items-center px-3 py-2 pt-3">
-              <span className="text-[11px] uppercase text-muted-foreground">Contacts</span>
+            <div className="flex justify-between items-center px-4 py-2 pt-3">
+              <div className="flex items-center gap-1.5">
+                <User className="h-3 w-3 text-muted-foreground/40" />
+                <span className="text-[11px] uppercase tracking-wider font-medium text-muted-foreground/60">
+                  Contacts
+                </span>
+              </div>
               {nonFavoriteChannels.length === 0 && (
                 <button
-                  className="bg-transparent border border-border text-muted-foreground px-1.5 py-0.5 text-[10px] rounded hover:bg-accent hover:text-foreground"
+                  className="text-[10px] px-1.5 py-0.5 rounded bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary transition-all"
                   onClick={handleSortToggle}
                   title={sortOrder === 'alpha' ? 'Sort by recent' : 'Sort alphabetically'}
                 >
-                  {sortOrder === 'alpha' ? 'A-Z' : '⏱'}
+                  {sortOrder === 'alpha' ? 'A-Z' : 'Recent'}
                 </button>
               )}
             </div>
             {nonFavoriteContacts.map((contact) => {
-              const unreadCount = getUnreadCount('contact', contact.public_key);
-              const isMention = hasMention('contact', contact.public_key);
+              const count = getUnreadCount('contact', contact.public_key);
+              const mention = hasMention('contact', contact.public_key);
               return (
-                <div
+                <ConversationItem
                   key={contact.public_key}
-                  className={cn(
-                    'px-3 py-2.5 cursor-pointer flex items-center gap-2 border-l-2 border-transparent hover:bg-accent',
-                    isActive('contact', contact.public_key) && 'bg-accent border-l-primary',
-                    unreadCount > 0 && '[&_.name]:font-bold [&_.name]:text-foreground'
-                  )}
+                  active={isActive('contact', contact.public_key)}
+                  unreadCount={count}
+                  isMentionItem={mention}
                   onClick={() =>
                     handleSelectConversation({
                       type: 'contact',
@@ -516,29 +523,17 @@ export function Sidebar({
                       name: getContactDisplayName(contact.name, contact.public_key),
                     })
                   }
+                  icon={
+                    <ContactAvatar
+                      name={contact.name}
+                      publicKey={contact.public_key}
+                      size={22}
+                      contactType={contact.type}
+                    />
+                  }
                 >
-                  <ContactAvatar
-                    name={contact.name}
-                    publicKey={contact.public_key}
-                    size={24}
-                    contactType={contact.type}
-                  />
-                  <span className="name flex-1 truncate">
-                    {getContactDisplayName(contact.name, contact.public_key)}
-                  </span>
-                  {unreadCount > 0 && (
-                    <span
-                      className={cn(
-                        'text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
-                        isMention
-                          ? 'bg-destructive text-destructive-foreground'
-                          : 'bg-primary text-primary-foreground'
-                      )}
-                    >
-                      {unreadCount}
-                    </span>
-                  )}
-                </div>
+                  {getContactDisplayName(contact.name, contact.public_key)}
+                </ConversationItem>
               );
             })}
           </>
@@ -548,7 +543,7 @@ export function Sidebar({
         {nonFavoriteContacts.length === 0 &&
           nonFavoriteChannels.length === 0 &&
           favoriteItems.length === 0 && (
-            <div className="p-5 text-center text-muted-foreground">
+            <div className="p-6 text-center text-muted-foreground/50 text-sm">
               {query ? 'No matches found' : 'No conversations yet'}
             </div>
           )}

@@ -41,11 +41,33 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        amber: {
+          400: "#fbbf24",
+          500: "#f59e0b",
+          600: "#d97706",
+        },
+        cyan: {
+          400: "#22d3ee",
+          500: "#06b6d4",
+          600: "#0891b2",
+        },
+        navy: {
+          800: "#141a2e",
+          900: "#0f1420",
+          950: "#0a0e1a",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        xl: "calc(var(--radius) + 4px)",
+      },
+      boxShadow: {
+        'glow-amber': '0 0 15px -3px hsl(38 92% 50% / 0.3)',
+        'glow-amber-sm': '0 0 8px -2px hsl(38 92% 50% / 0.25)',
+        'glow-cyan': '0 0 15px -3px hsl(187 80% 42% / 0.3)',
+        'inner-glow': 'inset 0 1px 0 0 hsl(40 20% 88% / 0.05)',
       },
     },
   },

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Menu } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Menu, Radio, Settings, MessageSquare, Wifi, WifiOff } from 'lucide-react';
 import type { HealthStatus, RadioConfig } from '../types';
 import { api } from '../api';
 import { toast } from './ui/sonner';
@@ -39,61 +40,111 @@ export function StatusBar({
   };
 
   return (
-    <div className="flex items-center gap-4 px-4 py-2 bg-[#252525] border-b border-[#333] text-xs">
-      {/* Mobile menu button - only visible on small screens */}
+    <div className="relative flex items-center gap-3 px-4 py-2.5 border-b border-border/50 bg-card/80 backdrop-blur-sm">
+      {/* Subtle gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-r from-primary/[0.03] via-transparent to-accent/[0.03] pointer-events-none" />
+
+      {/* Mobile menu button */}
       {onMenuClick && (
         <button
           onClick={onMenuClick}
-          className="md:hidden p-1 bg-transparent border-none text-[#e0e0e0] cursor-pointer"
+          className="md:hidden p-1.5 rounded-lg bg-transparent text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
           aria-label="Open menu"
         >
           <Menu className="h-5 w-5" />
         </button>
       )}
 
-      <h1 className="text-base font-semibold mr-auto">RemoteTerm</h1>
-
-      <div className="flex items-center gap-1 text-[#888]">
-        <div className={`w-2 h-2 rounded-full ${connected ? 'bg-[#4caf50]' : 'bg-[#666]'}`} />
-        <span className="hidden lg:inline text-[#e0e0e0]">
-          {connected ? 'Connected' : 'Disconnected'}
-        </span>
+      {/* Logo / Title */}
+      <div className="flex items-center gap-2 mr-auto">
+        <div className="relative">
+          <Radio className="h-5 w-5 text-primary" />
+          {connected && (
+            <motion.div
+              className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400"
+              animate={{ scale: [1, 1.3, 1] }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          )}
+        </div>
+        <h1 className="text-base font-bold tracking-tight text-gradient-amber">RemoteTerm</h1>
       </div>
 
+      {/* Connection status */}
+      <div className="flex items-center gap-2">
+        <AnimatePresence mode="wait">
+          {connected ? (
+            <motion.div
+              key="connected"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20"
+            >
+              <Wifi className="h-3.5 w-3.5 text-emerald-400" />
+              <span className="hidden lg:inline text-xs font-medium text-emerald-400">
+                Connected
+              </span>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="disconnected"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-destructive/10 border border-destructive/20"
+            >
+              <WifiOff className="h-3.5 w-3.5 text-destructive/70" />
+              <span className="hidden lg:inline text-xs font-medium text-destructive/70">
+                Offline
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Radio info */}
       {config && (
-        <div className="hidden lg:flex items-center gap-2 text-[#888]">
-          <span className="text-[#e0e0e0]">{config.name || 'Unnamed'}</span>
+        <div className="hidden lg:flex items-center gap-2">
+          <span className="text-xs font-medium text-foreground/80">{config.name || 'Unnamed'}</span>
           <span
-            className="font-mono text-[#888] cursor-pointer hover:text-[#4a9eff]"
+            className="font-mono text-[11px] text-muted-foreground cursor-pointer hover:text-primary transition-colors"
             onClick={() => {
               navigator.clipboard.writeText(config.public_key);
               toast.success('Public key copied!');
             }}
             title="Click to copy public key"
           >
-            {config.public_key.toLowerCase()}
+            {config.public_key.toLowerCase().slice(0, 16)}...
           </span>
         </div>
       )}
 
-      {!connected && (
+      {/* Action buttons */}
+      <div className="flex items-center gap-1.5">
+        {!connected && (
+          <motion.button
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            onClick={handleReconnect}
+            disabled={reconnecting}
+            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {reconnecting ? 'Reconnecting...' : 'Reconnect'}
+          </motion.button>
+        )}
         <button
-          onClick={handleReconnect}
-          disabled={reconnecting}
-          className="px-3 py-1 bg-[#4a3000] border border-[#6b4500] text-[#ffa500] rounded text-xs cursor-pointer hover:bg-[#5a3a00] disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={onSettingsClick}
+          className={`p-2 rounded-lg transition-all ${
+            settingsMode
+              ? 'bg-primary/15 text-primary border border-primary/30'
+              : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+          }`}
+          title={settingsMode ? 'Back to Chat' : 'Settings'}
         >
-          {reconnecting ? 'Reconnecting...' : 'Reconnect'}
+          {settingsMode ? <MessageSquare className="h-4 w-4" /> : <Settings className="h-4 w-4" />}
         </button>
-      )}
-      <button
-        onClick={onSettingsClick}
-        className="px-3 py-1 bg-[#333] border border-[#444] text-[#e0e0e0] rounded text-xs cursor-pointer hover:bg-[#444]"
-      >
-        <span role="img" aria-label="Settings">
-          &#128295;
-        </span>{' '}
-        {settingsMode ? 'Back to Chat' : 'Radio & Config'}
-      </button>
+      </div>
     </div>
   );
 }
