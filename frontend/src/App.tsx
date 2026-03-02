@@ -19,6 +19,7 @@ import {
   useAppSettings,
   useConversationRouter,
   useContactsAndChannels,
+  useLoopback,
 } from './hooks';
 import * as messageCache from './messageCache';
 import { StatusBar } from './components/StatusBar';
@@ -185,6 +186,8 @@ export function App() {
     trackNewMessage,
     refreshUnreads,
   } = useUnreadCounts(channels, contacts, activeConversation);
+
+  const loopback = useLoopback(handleHealthRefresh);
 
   // Determine if active contact is a repeater (used for routing to dashboard)
   const activeContactIsRepeater = useMemo(() => {
@@ -481,7 +484,9 @@ export function App() {
         </button>
       </div>
       <div className="flex-1 overflow-y-auto py-1">
-        {SETTINGS_SECTION_ORDER.map((section) => (
+        {SETTINGS_SECTION_ORDER.filter(
+          (s) => s !== 'loopback' || (health?.loopback_eligible && !health?.radio_connected)
+        ).map((section) => (
           <button
             key={section}
             type="button"
@@ -671,6 +676,7 @@ export function App() {
                     config={config}
                     health={health}
                     appSettings={appSettings}
+                    loopback={loopback}
                     onClose={handleCloseSettingsView}
                     onSave={handleSaveConfig}
                     onSaveAppSettings={handleSaveAppSettings}

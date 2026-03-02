@@ -19,6 +19,7 @@ from app.routers import (
     channels,
     contacts,
     health,
+    loopback,
     messages,
     packets,
     radio,
@@ -126,6 +127,7 @@ app.include_router(read_state.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(statistics.router, prefix="/api")
 app.include_router(ws.router, prefix="/api")
+app.include_router(loopback.router, prefix="/api")
 
 # Serve frontend static files in production
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend" / "dist"

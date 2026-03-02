@@ -30,6 +30,7 @@ export interface HealthStatus {
   database_size_mb: number;
   oldest_undecrypted_timestamp: number | null;
   mqtt_status: string | null;
+  loopback_eligible: boolean;
 }
 
 export interface MaintenanceResult {

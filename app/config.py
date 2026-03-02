@@ -36,6 +36,11 @@ class Settings(BaseSettings):
         return self
 
     @property
+    def loopback_eligible(self) -> bool:
+        """True when no explicit transport env var is set."""
+        return not self.serial_port and not self.tcp_host and not self.ble_address
+
+    @property
     def connection_type(self) -> Literal["serial", "tcp", "ble"]:
         if self.tcp_host:
             return "tcp"

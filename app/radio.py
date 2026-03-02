@@ -128,6 +128,7 @@ class RadioManager:
         self._setup_lock: asyncio.Lock | None = None
         self._setup_in_progress: bool = False
         self._setup_complete: bool = False
+        self._loopback_active: bool = False
 
     async def _acquire_operation_lock(
         self,
@@ -317,6 +318,36 @@ class RadioManager:
     def is_setup_complete(self) -> bool:
         return self._setup_complete
 
+    @property
+    def loopback_active(self) -> bool:
+        return self._loopback_active
+
+    def connect_loopback(self, mc: MeshCore, connection_info: str) -> None:
+        """Adopt a MeshCore instance created by the loopback WebSocket endpoint."""
+        self._meshcore = mc
+        self._connection_info = connection_info
+        self._loopback_active = True
+        self._last_connected = True
+        self._setup_complete = False
+
+    async def disconnect_loopback(self) -> None:
+        """Tear down a loopback session and resume normal auto-detect."""
+        from app.websocket import broadcast_health
+
+        mc = self._meshcore
+        self._meshcore = None
+        self._loopback_active = False
+        self._connection_info = None
+        self._setup_complete = False
+
+        if mc is not None:
+            try:
+                await mc.disconnect()
+            except Exception:
+                pass
+
+        broadcast_health(False, None)
+
     async def connect(self) -> None:
         """Connect to the radio using the configured transport."""
         if self._meshcore is not None:
@@ -460,6 +491,10 @@ class RadioManager:
             while True:
                 try:
                     await asyncio.sleep(CHECK_INTERVAL_SECONDS)
+
+                    # Skip auto-detect/reconnect while loopback is active
+                    if self._loopback_active:
+                        continue
 
                     current_connected = self.is_connected
 

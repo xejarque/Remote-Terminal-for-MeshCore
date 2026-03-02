@@ -39,6 +39,7 @@ const baseHealth: HealthStatus = {
   database_size_mb: 1.2,
   oldest_undecrypted_timestamp: null,
   mqtt_status: null,
+  loopback_eligible: false,
 };
 
 const baseSettings: AppSettings = {

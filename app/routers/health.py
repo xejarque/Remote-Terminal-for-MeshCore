@@ -17,6 +17,7 @@ class HealthResponse(BaseModel):
     database_size_mb: float
     oldest_undecrypted_timestamp: int | None
     mqtt_status: str | None = None
+    loopback_eligible: bool = False
 
 
 async def build_health_data(radio_connected: bool, connection_info: str | None) -> dict:
@@ -53,6 +54,7 @@ async def build_health_data(radio_connected: bool, connection_info: str | None) 
         "database_size_mb": db_size_mb,
         "oldest_undecrypted_timestamp": oldest_ts,
         "mqtt_status": mqtt_status,
+        "loopback_eligible": settings.loopback_eligible,
     }
 
 

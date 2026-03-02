@@ -17,6 +17,8 @@ import { SettingsDatabaseSection } from './settings/SettingsDatabaseSection';
 import { SettingsBotSection } from './settings/SettingsBotSection';
 import { SettingsStatisticsSection } from './settings/SettingsStatisticsSection';
 import { SettingsAboutSection } from './settings/SettingsAboutSection';
+import { SettingsLoopbackSection } from './settings/SettingsLoopbackSection';
+import type { UseLoopbackReturn } from '../hooks/useLoopback';
 
 interface SettingsModalBaseProps {
   open: boolean;
@@ -24,6 +26,7 @@ interface SettingsModalBaseProps {
   config: RadioConfig | null;
   health: HealthStatus | null;
   appSettings: AppSettings | null;
+  loopback?: UseLoopbackReturn;
   onClose: () => void;
   onSave: (update: RadioConfigUpdate) => Promise<void>;
   onSaveAppSettings: (update: AppSettingsUpdate) => Promise<void>;
@@ -57,6 +60,7 @@ export function SettingsModal(props: SettingsModalProps) {
     onHealthRefresh,
     onRefreshAppSettings,
     onLocalLabelChange,
+    loopback,
   } = props;
   const externalSidebarNav = props.externalSidebarNav === true;
   const desktopSection = props.externalSidebarNav ? props.desktopSection : undefined;
@@ -74,6 +78,7 @@ export function SettingsModal(props: SettingsModalProps) {
       radio: !isMobile,
       identity: false,
       connectivity: false,
+      loopback: false,
       mqtt: false,
       database: false,
       bot: false,
@@ -216,6 +221,18 @@ export function SettingsModal(props: SettingsModalProps) {
           )}
         </div>
       )}
+
+      {shouldRenderSection('loopback') &&
+        health?.loopback_eligible &&
+        !health?.radio_connected &&
+        loopback && (
+          <div className={sectionWrapperClass}>
+            {renderSectionHeader('loopback')}
+            {isSectionVisible('loopback') && (
+              <SettingsLoopbackSection loopback={loopback} className={sectionContentClass} />
+            )}
+          </div>
+        )}
 
       {shouldRenderSection('database') && (
         <div className={sectionWrapperClass}>
