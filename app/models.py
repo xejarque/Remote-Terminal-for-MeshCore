@@ -10,6 +10,7 @@ class Contact(BaseModel):
     flags: int = 0
     last_path: str | None = None
     last_path_len: int = -1
+    out_path_hash_mode: int | None = None
     last_advert: int | None = None
     lat: float | None = None
     lon: float | None = None
@@ -45,6 +46,10 @@ class Contact(BaseModel):
         The radio API uses different field names (adv_name, out_path, etc.)
         than our database schema (name, last_path, etc.).
         """
+        out_path_hash_mode = self.out_path_hash_mode
+        if out_path_hash_mode is None:
+            out_path_hash_mode = self._derive_out_path_hash_mode(self.last_path, self.last_path_len)
+
         return {
             "public_key": self.public_key,
             "adv_name": self.name or "",
@@ -52,9 +57,7 @@ class Contact(BaseModel):
             "flags": self.flags,
             "out_path": self.last_path or "",
             "out_path_len": self.last_path_len,
-            "out_path_hash_mode": self._derive_out_path_hash_mode(
-                self.last_path, self.last_path_len
-            ),
+            "out_path_hash_mode": out_path_hash_mode,
             "adv_lat": self.lat if self.lat is not None else 0.0,
             "adv_lon": self.lon if self.lon is not None else 0.0,
             "last_advert": self.last_advert if self.last_advert is not None else 0,
@@ -74,6 +77,7 @@ class Contact(BaseModel):
             "flags": radio_data.get("flags", 0),
             "last_path": radio_data.get("out_path"),
             "last_path_len": radio_data.get("out_path_len", -1),
+            "out_path_hash_mode": radio_data.get("out_path_hash_mode"),
             "lat": radio_data.get("adv_lat"),
             "lon": radio_data.get("adv_lon"),
             "last_advert": radio_data.get("last_advert"),

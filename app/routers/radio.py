@@ -53,32 +53,6 @@ class PrivateKeyUpdate(BaseModel):
     private_key: str = Field(description="Private key as hex string")
 
 
-async def _get_path_hash_mode_info(mc) -> tuple[int, bool]:
-    """Return (mode, supported) using the best interface available."""
-    commands = getattr(mc, "commands", None)
-    send_device_query = cast(
-        Callable[[], Awaitable[Any]] | None, getattr(commands, "send_device_query", None)
-    )
-    if commands is None or not callable(send_device_query):
-        return 0, False
-
-    try:
-        result = await send_device_query()
-    except Exception as exc:
-        logger.debug("Failed to query device info for path hash mode: %s", exc)
-        return 0, False
-
-    if result is None or result.type == EventType.ERROR:
-        return 0, False
-
-    payload = result.payload if isinstance(result.payload, dict) else {}
-    mode = payload.get("path_hash_mode")
-    if isinstance(mode, int) and 0 <= mode <= 2:
-        return mode, True
-
-    return 0, False
-
-
 async def _set_path_hash_mode(mc, mode: int):
     """Set path hash mode using either the new helper or raw command fallback."""
     commands = getattr(mc, "commands", None)
@@ -113,31 +87,29 @@ async def _set_path_hash_mode(mc, mode: int):
 @router.get("/config", response_model=RadioConfigResponse)
 async def get_radio_config() -> RadioConfigResponse:
     """Get the current radio configuration."""
-    require_connected()
+    mc = require_connected()
+    info = mc.self_info
+    if not info:
+        raise HTTPException(status_code=503, detail="Radio info not available")
 
-    async with radio_manager.radio_operation("get_radio_config") as mc:
-        info = mc.self_info
-        if not info:
-            raise HTTPException(status_code=503, detail="Radio info not available")
+    path_hash_mode, path_hash_mode_supported = radio_manager.path_hash_mode_info
 
-        path_hash_mode, path_hash_mode_supported = await _get_path_hash_mode_info(mc)
-
-        return RadioConfigResponse(
-            public_key=info.get("public_key", ""),
-            name=info.get("name", ""),
-            lat=info.get("adv_lat", 0.0),
-            lon=info.get("adv_lon", 0.0),
-            tx_power=info.get("tx_power", 0),
-            max_tx_power=info.get("max_tx_power", 0),
-            path_hash_mode=path_hash_mode,
-            path_hash_mode_supported=path_hash_mode_supported,
-            radio=RadioSettings(
-                freq=info.get("radio_freq", 0.0),
-                bw=info.get("radio_bw", 0.0),
-                sf=info.get("radio_sf", 0),
-                cr=info.get("radio_cr", 0),
-            ),
-        )
+    return RadioConfigResponse(
+        public_key=info.get("public_key", ""),
+        name=info.get("name", ""),
+        lat=info.get("adv_lat", 0.0),
+        lon=info.get("adv_lon", 0.0),
+        tx_power=info.get("tx_power", 0),
+        max_tx_power=info.get("max_tx_power", 0),
+        path_hash_mode=path_hash_mode,
+        path_hash_mode_supported=path_hash_mode_supported,
+        radio=RadioSettings(
+            freq=info.get("radio_freq", 0.0),
+            bw=info.get("radio_bw", 0.0),
+            sf=info.get("radio_sf", 0),
+            cr=info.get("radio_cr", 0),
+        ),
+    )
 
 
 @router.patch("/config", response_model=RadioConfigResponse)
@@ -162,7 +134,9 @@ async def update_radio_config(update: RadioConfigUpdate) -> RadioConfigResponse:
             await mc.commands.set_tx_power(val=update.tx_power)
 
         if update.path_hash_mode is not None:
-            current_mode, supported = await _get_path_hash_mode_info(mc)
+            current_mode, supported = radio_manager.path_hash_mode_info
+            if not supported:
+                current_mode, supported = await radio_manager.refresh_path_hash_mode_info(mc)
             if not supported:
                 raise HTTPException(
                     status_code=400,
@@ -171,6 +145,7 @@ async def update_radio_config(update: RadioConfigUpdate) -> RadioConfigResponse:
             if current_mode != update.path_hash_mode:
                 logger.info("Setting path hash mode to %d", update.path_hash_mode)
                 await _set_path_hash_mode(mc, update.path_hash_mode)
+                radio_manager.set_path_hash_mode_info(update.path_hash_mode, True)
 
         if update.radio is not None:
             logger.info(

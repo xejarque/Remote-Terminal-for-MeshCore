@@ -66,6 +66,10 @@ describe('parsePathHops', () => {
     expect(parsePathHops('1A2B3C4D', 2)).toEqual(['1A2B', '3C4D']);
   });
 
+  it('parses three-byte hops when path length is provided', () => {
+    expect(parsePathHops('1A2B3C4D5E6F', 2)).toEqual(['1A2B3C', '4D5E6F']);
+  });
+
   it('converts to uppercase', () => {
     expect(parsePathHops('1a2b')).toEqual(['1A', '2B']);
   });

@@ -30,9 +30,13 @@ def _reset_radio_state():
     """Save/restore radio_manager state so tests don't leak."""
     prev = radio_manager._meshcore
     prev_lock = radio_manager._operation_lock
+    prev_path_hash_mode = radio_manager._path_hash_mode
+    prev_path_hash_mode_supported = radio_manager._path_hash_mode_supported
     yield
     radio_manager._meshcore = prev
     radio_manager._operation_lock = prev_lock
+    radio_manager._path_hash_mode = prev_path_hash_mode
+    radio_manager._path_hash_mode_supported = prev_path_hash_mode_supported
 
 
 def _make_radio_result(payload=None):
@@ -157,6 +161,37 @@ class TestOutgoingDMBroadcast:
         assert add_contact_arg["out_path"] == "11223344"
         assert add_contact_arg["out_path_len"] == 2
         assert add_contact_arg["out_path_hash_mode"] == 1
+
+    @pytest.mark.asyncio
+    async def test_send_dm_uses_persisted_out_path_hash_mode_when_present(self, test_db):
+        mc = _make_mc()
+        pub_key = "ef" * 32
+        await ContactRepository.upsert(
+            {
+                "public_key": pub_key,
+                "name": "Carol",
+                "type": 0,
+                "flags": 0,
+                "last_path": "11223344",
+                "last_path_len": 2,
+                "out_path_hash_mode": 0,
+                "last_advert": None,
+                "lat": None,
+                "lon": None,
+                "last_seen": None,
+                "on_radio": False,
+                "last_contacted": None,
+            }
+        )
+
+        with (
+            patch("app.routers.messages.require_connected", return_value=mc),
+            patch.object(radio_manager, "_meshcore", mc),
+        ):
+            await send_direct_message(SendDirectMessageRequest(destination=pub_key, text="hi"))
+
+        add_contact_arg = mc.commands.add_contact.await_args.args[0]
+        assert add_contact_arg["out_path_hash_mode"] == 0
 
 
 class TestOutgoingChannelBroadcast:

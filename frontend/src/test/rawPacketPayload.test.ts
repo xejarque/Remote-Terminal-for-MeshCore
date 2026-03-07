@@ -15,6 +15,10 @@ describe('extractRawPacketPayload', () => {
     expect(extractRawPacketPayload('14010203044220273031DEADBEEF')).toBe('DEADBEEF');
   });
 
+  it('extracts payload for three-byte-hop packets', () => {
+    expect(extractRawPacketPayload('1582112233445566DEADBEEF')).toBe('DEADBEEF');
+  });
+
   it('returns null for truncated multi-byte path data', () => {
     expect(extractRawPacketPayload('15422027')).toBeNull();
   });

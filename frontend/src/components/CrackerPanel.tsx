@@ -1,3 +1,4 @@
+import '../utils/meshcoreDecoderPatch';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GroupTextCracker, type ProgressReport } from 'meshcore-hashtag-cracker';
 import NoSleep from 'nosleep.js';

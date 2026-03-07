@@ -463,7 +463,7 @@ async def reset_contact_path(public_key: str) -> dict:
     """Reset a contact's routing path to flood."""
     contact = await _resolve_contact_or_404(public_key)
 
-    await ContactRepository.update_path(contact.public_key, "", -1)
+    await ContactRepository.update_path(contact.public_key, "", -1, out_path_hash_mode=-1)
     logger.info("Reset path to flood for %s", contact.public_key[:12])
 
     # Push the updated path to radio if connected and contact is on radio

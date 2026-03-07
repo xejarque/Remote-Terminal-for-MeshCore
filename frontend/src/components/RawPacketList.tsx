@@ -1,3 +1,4 @@
+import '../utils/meshcoreDecoderPatch';
 import { useEffect, useRef, useMemo } from 'react';
 import { MeshCoreDecoder, PayloadType, Utils } from '@michaelhart/meshcore-decoder';
 import type { RawPacket } from '../types';

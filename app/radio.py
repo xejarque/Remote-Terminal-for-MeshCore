@@ -1,11 +1,12 @@
 import asyncio
 import glob
+import inspect
 import logging
 import platform
 from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
 
-from meshcore import MeshCore
+from meshcore import EventType, MeshCore
 
 from app.config import settings
 
@@ -128,6 +129,8 @@ class RadioManager:
         self._setup_lock: asyncio.Lock | None = None
         self._setup_in_progress: bool = False
         self._setup_complete: bool = False
+        self._path_hash_mode: int = 0
+        self._path_hash_mode_supported: bool = False
 
     async def _acquire_operation_lock(
         self,
@@ -257,6 +260,7 @@ class RadioManager:
 
                     # Sync radio clock with system time
                     await sync_radio_time(mc)
+                    await self.refresh_path_hash_mode_info(mc)
 
                     # Apply flood scope from settings (best-effort; older firmware
                     # may not support set_flood_scope)
@@ -331,6 +335,48 @@ class RadioManager:
     def is_setup_complete(self) -> bool:
         return self._setup_complete
 
+    @property
+    def path_hash_mode_info(self) -> tuple[int, bool]:
+        return self._path_hash_mode, self._path_hash_mode_supported
+
+    def set_path_hash_mode_info(self, mode: int, supported: bool) -> None:
+        self._path_hash_mode = mode if supported and 0 <= mode <= 2 else 0
+        self._path_hash_mode_supported = supported
+
+    async def refresh_path_hash_mode_info(self, mc: MeshCore | None = None) -> tuple[int, bool]:
+        target = mc or self._meshcore
+        if target is None:
+            self.set_path_hash_mode_info(0, False)
+            return self.path_hash_mode_info
+
+        commands = getattr(target, "commands", None)
+        send_device_query = getattr(commands, "send_device_query", None)
+        if commands is None or not callable(send_device_query):
+            self.set_path_hash_mode_info(0, False)
+            return self.path_hash_mode_info
+
+        try:
+            result = send_device_query()
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as exc:
+            logger.debug("Failed to query device info for path hash mode: %s", exc)
+            self.set_path_hash_mode_info(0, False)
+            return self.path_hash_mode_info
+
+        if result is None or getattr(result, "type", None) == EventType.ERROR:
+            self.set_path_hash_mode_info(0, False)
+            return self.path_hash_mode_info
+
+        payload_obj = getattr(result, "payload", None)
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
+        mode = payload.get("path_hash_mode")
+        if isinstance(mode, int) and 0 <= mode <= 2:
+            self.set_path_hash_mode_info(mode, True)
+        else:
+            self.set_path_hash_mode_info(0, False)
+        return self.path_hash_mode_info
+
     async def connect(self) -> None:
         """Connect to the radio using the configured transport."""
         if self._meshcore is not None:
@@ -369,6 +415,7 @@ class RadioManager:
         self._connection_info = f"Serial: {port}"
         self._last_connected = True
         self._setup_complete = False
+        self.set_path_hash_mode_info(0, False)
         logger.debug("Serial connection established")
 
     async def _connect_tcp(self) -> None:
@@ -386,6 +433,7 @@ class RadioManager:
         self._connection_info = f"TCP: {host}:{port}"
         self._last_connected = True
         self._setup_complete = False
+        self.set_path_hash_mode_info(0, False)
         logger.debug("TCP connection established")
 
     async def _connect_ble(self) -> None:
@@ -403,6 +451,7 @@ class RadioManager:
         self._connection_info = f"BLE: {address}"
         self._last_connected = True
         self._setup_complete = False
+        self.set_path_hash_mode_info(0, False)
         logger.debug("BLE connection established")
 
     async def disconnect(self) -> None:
@@ -412,6 +461,7 @@ class RadioManager:
             await self._meshcore.disconnect()
             self._meshcore = None
             self._setup_complete = False
+            self.set_path_hash_mode_info(0, False)
             logger.debug("Radio disconnected")
 
     async def reconnect(self, *, broadcast_on_success: bool = True) -> bool:

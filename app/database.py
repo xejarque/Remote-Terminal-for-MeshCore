@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS contacts (
     flags INTEGER DEFAULT 0,
     last_path TEXT,
     last_path_len INTEGER DEFAULT -1,
+    out_path_hash_mode INTEGER,
     last_advert INTEGER,
     lat REAL,
     lon REAL,

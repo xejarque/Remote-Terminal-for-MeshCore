@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { formatTime } from '../utils/messageParser';
-import { isValidLocation, calculateDistance, formatDistance } from '../utils/pathUtils';
+import {
+  isValidLocation,
+  calculateDistance,
+  formatDistance,
+  parsePathHops,
+} from '../utils/pathUtils';
 import { getMapFocusHash } from '../utils/urlHash';
 import { isFavorite } from '../utils/favorites';
 import { handleKeyboardActivate } from '../utils/a11y';
@@ -413,7 +418,7 @@ export function ContactInfoPane({
                       className="flex justify-between items-center text-sm"
                     >
                       <span className="font-mono text-xs truncate">
-                        {p.path ? p.path.match(/.{2}/g)!.join(' → ') : '(direct)'}
+                        {p.path ? parsePathHops(p.path, p.path_len).join(' → ') : '(direct)'}
                       </span>
                       <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
                         {p.heard_count}x · {formatTime(p.last_seen)}

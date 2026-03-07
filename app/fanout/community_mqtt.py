@@ -150,7 +150,8 @@ def _calculate_packet_hash(raw_bytes: bytes) -> str:
         # Read packed path metadata. Invalid/truncated packets map to zero hash.
         if offset >= len(raw_bytes):
             return "0" * 16
-        path_len, _path_hash_size, path_byte_length = decode_path_metadata(raw_bytes[offset])
+        packed_path_len = raw_bytes[offset]
+        path_len, _path_hash_size, path_byte_length = decode_path_metadata(packed_path_len)
         offset += 1
 
         # Skip past path to get to payload. Invalid/truncated packets map to zero hash.
@@ -159,11 +160,11 @@ def _calculate_packet_hash(raw_bytes: bytes) -> str:
         payload_start = offset + path_byte_length
         payload_data = raw_bytes[payload_start:]
 
-        # Hash: payload_type(1 byte) [+ path_len as uint16_t LE for TRACE] + payload_data
+        # Hash: payload_type(1 byte) [+ packed path_len as uint16_t LE for TRACE] + payload_data
         hash_obj = hashlib.sha256()
         hash_obj.update(bytes([payload_type]))
         if payload_type == 9:  # PAYLOAD_TYPE_TRACE
-            hash_obj.update(path_len.to_bytes(2, byteorder="little"))
+            hash_obj.update(packed_path_len.to_bytes(2, byteorder="little"))
         hash_obj.update(payload_data)
 
         return hash_obj.hexdigest()[:16].upper()

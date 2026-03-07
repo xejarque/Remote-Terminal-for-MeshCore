@@ -365,7 +365,7 @@ class TestCalculatePacketHash:
         expected = hashlib.sha256(bytes([2]) + payload).hexdigest()[:16].upper()
         assert result == expected
 
-    def test_multi_byte_path_uses_hop_count_for_trace_hash(self):
+    def test_multi_byte_path_uses_packed_path_byte_for_trace_hash(self):
         import hashlib
 
         payload = b"\x99\x88"
@@ -373,7 +373,7 @@ class TestCalculatePacketHash:
         result = _calculate_packet_hash(raw)
 
         expected = (
-            hashlib.sha256(bytes([9]) + (2).to_bytes(2, byteorder="little") + payload)
+            hashlib.sha256(bytes([9]) + (0x42).to_bytes(2, byteorder="little") + payload)
             .hexdigest()[:16]
             .upper()
         )

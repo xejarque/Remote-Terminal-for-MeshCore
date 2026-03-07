@@ -1,3 +1,4 @@
+import './meshcoreDecoderPatch';
 import { MeshCoreDecoder, PayloadType } from '@michaelhart/meshcore-decoder';
 import { CONTACT_TYPE_REPEATER, type Contact, type RawPacket } from '../types';
 import { hashString } from './contactAvatar';

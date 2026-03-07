@@ -107,6 +107,21 @@ class TestPacketParsing:
 
         assert extract_payload(packet) == b"payload_data"
 
+    def test_parse_packet_with_three_byte_hops(self):
+        """Packets support three-byte hop identifiers as well as one/two-byte hops."""
+        packet = bytes([0x0A, 0x82, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]) + b"msg"
+
+        result = parse_packet(packet)
+
+        assert result is not None
+        assert result.route_type == RouteType.DIRECT
+        assert result.payload_type == PayloadType.TEXT_MESSAGE
+        assert result.path_length == 2
+        assert result.path_hash_size == 3
+        assert result.path_byte_length == 6
+        assert result.path == bytes([0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+        assert result.payload == b"msg"
+
     def test_parse_transport_flood_skips_transport_code(self):
         """TRANSPORT_FLOOD packets have 4-byte transport code to skip."""
         # Header: route_type=TRANSPORT_FLOOD(0), payload_type=GROUP_TEXT(5)

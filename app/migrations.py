@@ -14,6 +14,7 @@ from hashlib import sha256
 import aiosqlite
 
 from app.decoder import extract_payload, parse_packet
+from app.models import Contact
 
 logger = logging.getLogger(__name__)
 
@@ -303,6 +304,13 @@ async def run_migrations(conn: aiosqlite.Connection) -> int:
         logger.info("Applying migration 38: drop legacy MQTT/bot columns from app_settings")
         await _migrate_038_drop_legacy_columns(conn)
         await set_version(conn, 38)
+        applied += 1
+
+    # Migration 39: Persist exact contact out_path_hash_mode from radio sync
+    if version < 39:
+        logger.info("Applying migration 39: add contacts.out_path_hash_mode")
+        await _migrate_039_add_contact_out_path_hash_mode(conn)
+        await set_version(conn, 39)
         applied += 1
 
     if applied > 0:
@@ -2228,5 +2236,46 @@ async def _migrate_038_drop_legacy_columns(conn: aiosqlite.Connection) -> None:
                 logger.debug("SQLite doesn't support DROP COLUMN, %s column will remain", column)
             else:
                 raise
+
+    await conn.commit()
+
+
+async def _migrate_039_add_contact_out_path_hash_mode(conn: aiosqlite.Connection) -> None:
+    """Add contacts.out_path_hash_mode and backfill best-effort values for existing rows."""
+    tables = await conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'contacts'"
+    )
+    if await tables.fetchone() is None:
+        await conn.commit()
+        return
+
+    columns_cursor = await conn.execute("PRAGMA table_info(contacts)")
+    columns = {row["name"] for row in await columns_cursor.fetchall()}
+
+    if "out_path_hash_mode" not in columns:
+        await conn.execute("ALTER TABLE contacts ADD COLUMN out_path_hash_mode INTEGER")
+        columns.add("out_path_hash_mode")
+
+    if not {"last_path", "last_path_len"}.issubset(columns):
+        await conn.commit()
+        return
+
+    rows_cursor = await conn.execute(
+        """
+        SELECT public_key, last_path, last_path_len, out_path_hash_mode
+        FROM contacts
+        """
+    )
+    rows = await rows_cursor.fetchall()
+    for row in rows:
+        if row["out_path_hash_mode"] is not None:
+            continue
+        if row["last_path_len"] is None or row["last_path_len"] < 0:
+            continue
+        derived = Contact._derive_out_path_hash_mode(row["last_path"], row["last_path_len"])
+        await conn.execute(
+            "UPDATE contacts SET out_path_hash_mode = ? WHERE public_key = ?",
+            (derived, row["public_key"]),
+        )
 
     await conn.commit()
