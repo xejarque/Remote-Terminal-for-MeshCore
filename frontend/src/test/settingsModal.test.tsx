@@ -24,6 +24,8 @@ const baseConfig: RadioConfig = {
   lon: 2,
   tx_power: 17,
   max_tx_power: 22,
+  path_hash_mode: 1,
+  path_hash_mode_supported: true,
   radio: {
     freq: 910.525,
     bw: 62.5,
@@ -57,6 +59,7 @@ const baseSettings: AppSettings = {
 };
 
 function renderModal(overrides?: {
+  config?: RadioConfig;
   appSettings?: AppSettings;
   health?: HealthStatus;
   onSaveAppSettings?: (update: AppSettingsUpdate) => Promise<void>;
@@ -83,7 +86,7 @@ function renderModal(overrides?: {
   const commonProps = {
     open: overrides?.open ?? true,
     pageMode: overrides?.pageMode,
-    config: baseConfig,
+    config: overrides?.config ?? baseConfig,
     health: overrides?.health ?? baseHealth,
     appSettings: overrides?.appSettings ?? baseSettings,
     onClose,
@@ -216,6 +219,36 @@ describe('SettingsModal', () => {
     await waitFor(() => {
       expect(onSaveAppSettings).not.toHaveBeenCalled();
     });
+  });
+
+  it('saves radio path hash mode through onSave', async () => {
+    const { onSave } = renderModal();
+    openRadioSection();
+
+    fireEvent.change(screen.getByLabelText('Path Hash Mode'), {
+      target: { value: '2' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path_hash_mode: 2,
+        })
+      );
+    });
+  });
+
+  it('disables path hash mode when the connected radio does not expose it', () => {
+    renderModal({
+      config: { ...baseConfig, path_hash_mode_supported: false },
+    });
+    openRadioSection();
+
+    expect(screen.getByLabelText('Path Hash Mode')).toBeDisabled();
+    expect(
+      screen.getByText('Connected radio or firmware does not expose this setting.')
+    ).toBeInTheDocument();
   });
 
   it('renders selected section from external sidebar nav on desktop mode', async () => {

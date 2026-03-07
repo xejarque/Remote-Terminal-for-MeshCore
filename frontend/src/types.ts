@@ -12,6 +12,8 @@ export interface RadioConfig {
   lon: number;
   tx_power: number;
   max_tx_power: number;
+  path_hash_mode: number;
+  path_hash_mode_supported: boolean;
   radio: RadioSettings;
 }
 
@@ -20,6 +22,7 @@ export interface RadioConfigUpdate {
   lat?: number;
   lon?: number;
   tx_power?: number;
+  path_hash_mode?: number;
   radio?: RadioSettings;
 }
 

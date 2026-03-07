@@ -43,6 +43,7 @@ export function SettingsRadioSection({
   const [lat, setLat] = useState('');
   const [lon, setLon] = useState('');
   const [txPower, setTxPower] = useState('');
+  const [pathHashMode, setPathHashMode] = useState('0');
   const [freq, setFreq] = useState('');
   const [bw, setBw] = useState('');
   const [sf, setSf] = useState('');
@@ -73,6 +74,7 @@ export function SettingsRadioSection({
     setLat(String(config.lat));
     setLon(String(config.lon));
     setTxPower(String(config.tx_power));
+    setPathHashMode(String(config.path_hash_mode));
     setFreq(String(config.radio.freq));
     setBw(String(config.radio.bw));
     setSf(String(config.radio.sf));
@@ -145,6 +147,7 @@ export function SettingsRadioSection({
     const parsedLat = parseFloat(lat);
     const parsedLon = parseFloat(lon);
     const parsedTxPower = parseInt(txPower, 10);
+    const parsedPathHashMode = parseInt(pathHashMode, 10);
     const parsedFreq = parseFloat(freq);
     const parsedBw = parseFloat(bw);
     const parsedSf = parseInt(sf, 10);
@@ -159,11 +162,20 @@ export function SettingsRadioSection({
       return null;
     }
 
+    if (
+      config.path_hash_mode_supported &&
+      (isNaN(parsedPathHashMode) || parsedPathHashMode < 0 || parsedPathHashMode > 2)
+    ) {
+      setError('Path hash mode must be between 0 and 2');
+      return null;
+    }
+
     return {
       name,
       lat: parsedLat,
       lon: parsedLon,
       tx_power: parsedTxPower,
+      ...(config.path_hash_mode_supported && { path_hash_mode: parsedPathHashMode }),
       radio: {
         freq: parsedFreq,
         bw: parsedBw,
@@ -382,6 +394,26 @@ export function SettingsRadioSection({
           <Label htmlFor="max-tx">Max TX Power</Label>
           <Input id="max-tx" type="number" value={config.max_tx_power} disabled />
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="path-hash-mode">Path Hash Mode</Label>
+        <select
+          id="path-hash-mode"
+          value={pathHashMode}
+          onChange={(e) => setPathHashMode(e.target.value)}
+          disabled={!config.path_hash_mode_supported}
+          className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <option value="0">1 byte per hop</option>
+          <option value="1">2 bytes per hop</option>
+          <option value="2">3 bytes per hop</option>
+        </select>
+        <p className="text-xs text-muted-foreground">
+          {config.path_hash_mode_supported
+            ? 'Controls the default hop hash width your radio uses for outbound routed paths.'
+            : 'Connected radio or firmware does not expose this setting.'}
+        </p>
       </div>
 
       <Separator />

@@ -70,6 +70,10 @@ def _mock_meshcore_with_info():
     mc.commands.set_tx_power = AsyncMock()
     mc.commands.set_radio = AsyncMock()
     mc.commands.send_appstart = AsyncMock()
+    mc.commands.send_device_query = AsyncMock(
+        return_value=_radio_result(payload={"path_hash_mode": 1})
+    )
+    mc.commands.send = AsyncMock(return_value=_radio_result())
     mc.commands.import_private_key = AsyncMock(return_value=_radio_result())
     return mc
 
@@ -78,7 +82,11 @@ class TestGetRadioConfig:
     @pytest.mark.asyncio
     async def test_maps_self_info_to_response(self):
         mc = _mock_meshcore_with_info()
-        with patch("app.routers.radio.require_connected", return_value=mc):
+        with (
+            patch("app.routers.radio.require_connected", return_value=mc),
+            patch.object(radio_manager, "_meshcore", mc),
+            patch.object(radio_manager, "radio_operation", _noop_radio_operation(mc)),
+        ):
             response = await get_radio_config()
 
         assert response.public_key == "aa" * 32
@@ -87,16 +95,37 @@ class TestGetRadioConfig:
         assert response.lon == 20.0
         assert response.radio.freq == 910.525
         assert response.radio.cr == 5
+        assert response.path_hash_mode == 1
+        assert response.path_hash_mode_supported is True
 
     @pytest.mark.asyncio
     async def test_returns_503_when_self_info_missing(self):
         mc = MagicMock()
         mc.self_info = None
-        with patch("app.routers.radio.require_connected", return_value=mc):
+        with (
+            patch("app.routers.radio.require_connected", return_value=mc),
+            patch.object(radio_manager, "_meshcore", mc),
+            patch.object(radio_manager, "radio_operation", _noop_radio_operation(mc)),
+        ):
             with pytest.raises(HTTPException) as exc:
                 await get_radio_config()
 
         assert exc.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_marks_path_hash_mode_unsupported_when_device_info_lacks_field(self):
+        mc = _mock_meshcore_with_info()
+        mc.commands.send_device_query = AsyncMock(return_value=_radio_result(payload={}))
+
+        with (
+            patch("app.routers.radio.require_connected", return_value=mc),
+            patch.object(radio_manager, "_meshcore", mc),
+            patch.object(radio_manager, "radio_operation", _noop_radio_operation(mc)),
+        ):
+            response = await get_radio_config()
+
+        assert response.path_hash_mode == 0
+        assert response.path_hash_mode_supported is False
 
 
 class TestUpdateRadioConfig:
@@ -110,12 +139,15 @@ class TestUpdateRadioConfig:
             lon=20.0,
             tx_power=17,
             max_tx_power=22,
+            path_hash_mode=1,
+            path_hash_mode_supported=True,
             radio=RadioSettings(freq=910.525, bw=62.5, sf=7, cr=5),
         )
 
         with (
             patch("app.routers.radio.require_connected", return_value=mc),
             patch.object(radio_manager, "_meshcore", mc),
+            patch.object(radio_manager, "radio_operation", _noop_radio_operation(mc)),
             patch("app.routers.radio.sync_radio_time", new_callable=AsyncMock) as mock_sync_time,
             patch(
                 "app.routers.radio.get_radio_config", new_callable=AsyncMock, return_value=expected
@@ -130,6 +162,52 @@ class TestUpdateRadioConfig:
         mc.commands.send_appstart.assert_awaited_once()
         mock_sync_time.assert_awaited_once()
         assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_updates_path_hash_mode_via_raw_command_fallback(self):
+        mc = _mock_meshcore_with_info()
+        mc.commands.set_path_hash_mode = None
+        expected = RadioConfigResponse(
+            public_key="aa" * 32,
+            name="NodeA",
+            lat=10.0,
+            lon=20.0,
+            tx_power=17,
+            max_tx_power=22,
+            path_hash_mode=2,
+            path_hash_mode_supported=True,
+            radio=RadioSettings(freq=910.525, bw=62.5, sf=7, cr=5),
+        )
+
+        with (
+            patch("app.routers.radio.require_connected", return_value=mc),
+            patch.object(radio_manager, "_meshcore", mc),
+            patch.object(radio_manager, "radio_operation", _noop_radio_operation(mc)),
+            patch("app.routers.radio.sync_radio_time", new_callable=AsyncMock),
+            patch(
+                "app.routers.radio.get_radio_config", new_callable=AsyncMock, return_value=expected
+            ),
+        ):
+            result = await update_radio_config(RadioConfigUpdate(path_hash_mode=2))
+
+        mc.commands.send.assert_awaited_once_with(b"\x3d\x00\x02", [EventType.OK, EventType.ERROR])
+        assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_rejects_path_hash_mode_update_when_radio_does_not_expose_it(self):
+        mc = _mock_meshcore_with_info()
+        mc.commands.send_device_query = AsyncMock(return_value=_radio_result(payload={}))
+
+        with (
+            patch("app.routers.radio.require_connected", return_value=mc),
+            patch.object(radio_manager, "_meshcore", mc),
+            patch.object(radio_manager, "radio_operation", _noop_radio_operation(mc)),
+        ):
+            with pytest.raises(HTTPException) as exc:
+                await update_radio_config(RadioConfigUpdate(path_hash_mode=2))
+
+        assert exc.value.status_code == 400
+        assert "path hash mode" in exc.value.detail.lower()
 
 
 class TestPrivateKeyImport:

@@ -157,6 +157,8 @@ describe('App startup hash resolution', () => {
       lon: 0,
       tx_power: 17,
       max_tx_power: 22,
+      path_hash_mode: 0,
+      path_hash_mode_supported: true,
       radio: { freq: 910.525, bw: 62.5, sf: 7, cr: 5 },
     });
     mocks.api.getSettings.mockResolvedValue({
