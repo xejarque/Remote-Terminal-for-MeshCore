@@ -573,9 +573,7 @@ describe('formatHopCounts', () => {
   });
 
   it('uses explicit path_len for multi-byte hop counts', () => {
-    const result = formatHopCounts([
-      { path: '1A2B3C4D', path_len: 2, received_at: 1700000000 },
-    ]);
+    const result = formatHopCounts([{ path: '1A2B3C4D', path_len: 2, received_at: 1700000000 }]);
     expect(result.display).toBe('2');
     expect(result.allDirect).toBe(false);
     expect(result.hasMultiple).toBe(false);

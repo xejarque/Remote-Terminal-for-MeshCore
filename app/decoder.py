@@ -95,7 +95,7 @@ def calculate_channel_hash(channel_key: bytes) -> str:
     return format(hash_bytes[0], "02x")
 
 
-def _decode_path_metadata(path_byte: int) -> tuple[int, int, int]:
+def decode_path_metadata(path_byte: int) -> tuple[int, int, int]:
     """Decode the packed path byte into hop count and byte length."""
     path_hash_size = (path_byte >> 6) + 1
     path_length = path_byte & 0x3F
@@ -135,7 +135,7 @@ def extract_payload(raw_packet: bytes) -> bytes | None:
         # Decode packed path metadata
         if len(raw_packet) < offset + 1:
             return None
-        path_length, _path_hash_size, path_byte_length = _decode_path_metadata(raw_packet[offset])
+        path_length, _path_hash_size, path_byte_length = decode_path_metadata(raw_packet[offset])
         offset += 1
 
         # Skip path data
@@ -171,7 +171,7 @@ def parse_packet(raw_packet: bytes) -> PacketInfo | None:
         # Decode packed path metadata
         if len(raw_packet) < offset + 1:
             return None
-        path_length, path_hash_size, path_byte_length = _decode_path_metadata(raw_packet[offset])
+        path_length, path_hash_size, path_byte_length = decode_path_metadata(raw_packet[offset])
         offset += 1
 
         # Extract path data

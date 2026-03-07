@@ -13,6 +13,8 @@ from hashlib import sha256
 
 import aiosqlite
 
+from app.decoder import extract_payload, parse_packet
+
 logger = logging.getLogger(__name__)
 
 
@@ -442,35 +444,7 @@ def _extract_payload_for_hash(raw_packet: bytes) -> bytes | None:
 
     Returns the payload bytes, or None if packet is malformed.
     """
-    if len(raw_packet) < 2:
-        return None
-
-    try:
-        header = raw_packet[0]
-        route_type = header & 0x03
-        offset = 1
-
-        # Skip transport codes if present (TRANSPORT_FLOOD=0, TRANSPORT_DIRECT=3)
-        if route_type in (0x00, 0x03):
-            if len(raw_packet) < offset + 4:
-                return None
-            offset += 4
-
-        # Get path length
-        if len(raw_packet) < offset + 1:
-            return None
-        path_length = raw_packet[offset]
-        offset += 1
-
-        # Skip path bytes
-        if len(raw_packet) < offset + path_length:
-            return None
-        offset += path_length
-
-        # Rest is payload (may be empty, matching decoder.py behavior)
-        return raw_packet[offset:]
-    except (IndexError, ValueError):
-        return None
+    return extract_payload(raw_packet)
 
 
 async def _migrate_005_backfill_payload_hashes(conn: aiosqlite.Connection) -> None:
@@ -624,34 +598,10 @@ def _extract_path_from_packet(raw_packet: bytes) -> str | None:
 
     Returns the path as a hex string, or None if packet is malformed.
     """
-    if len(raw_packet) < 2:
+    packet_info = parse_packet(raw_packet)
+    if packet_info is None:
         return None
-
-    try:
-        header = raw_packet[0]
-        route_type = header & 0x03
-        offset = 1
-
-        # Skip transport codes if present (TRANSPORT_FLOOD=0, TRANSPORT_DIRECT=3)
-        if route_type in (0x00, 0x03):
-            if len(raw_packet) < offset + 4:
-                return None
-            offset += 4
-
-        # Get path length
-        if len(raw_packet) < offset + 1:
-            return None
-        path_length = raw_packet[offset]
-        offset += 1
-
-        # Extract path bytes
-        if len(raw_packet) < offset + path_length:
-            return None
-        path_bytes = raw_packet[offset : offset + path_length]
-
-        return path_bytes.hex()
-    except (IndexError, ValueError):
-        return None
+    return packet_info.path.hex()
 
 
 async def _migrate_007_backfill_message_paths(conn: aiosqlite.Connection) -> None:

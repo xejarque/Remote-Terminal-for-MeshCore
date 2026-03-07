@@ -215,6 +215,22 @@ class TestAdvertPaths:
         assert data[0]["next_hop"] is None
 
     @pytest.mark.asyncio
+    async def test_get_contact_advert_paths_with_multi_byte_hops(self, test_db, client):
+        repeater_key = KEY_A
+        await _insert_contact(repeater_key, "R1", type=2)
+        await ContactAdvertPathRepository.record_observation(
+            repeater_key, "a1b2c3d4", 1000, path_len=2
+        )
+
+        response = await client.get(f"/api/contacts/{repeater_key}/advert-paths")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["path_len"] == 2
+        assert data[0]["next_hop"] == "a1b2"
+
+    @pytest.mark.asyncio
     async def test_get_contact_advert_paths_works_for_non_repeater(self, test_db, client):
         await _insert_contact(KEY_A, "Alice", type=1)
 
@@ -324,6 +340,25 @@ class TestContactDetail:
         repeater = data["nearest_repeaters"][0]
         assert repeater["public_key"] == KEY_B
         assert repeater["name"] == "Relay1"
+        assert repeater["heard_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_detail_nearest_repeaters_resolved_for_multi_byte_hops(self, test_db, client):
+        await _insert_contact(KEY_A, "Alice", type=1)
+        repeater_key = "b1c2" + "dd" * 30
+        await _insert_contact(repeater_key, "RelayWide", type=2)
+
+        await ContactAdvertPathRepository.record_observation(KEY_A, "b1c2eeff", 1000, path_len=2)
+        await ContactAdvertPathRepository.record_observation(KEY_A, "b1c21122", 1010, path_len=2)
+
+        response = await client.get(f"/api/contacts/{KEY_A}/detail")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["nearest_repeaters"]) == 1
+        repeater = data["nearest_repeaters"][0]
+        assert repeater["public_key"] == repeater_key
+        assert repeater["name"] == "RelayWide"
         assert repeater["heard_count"] == 2
 
     @pytest.mark.asyncio

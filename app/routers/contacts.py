@@ -16,6 +16,7 @@ from app.models import (
     TraceResponse,
 )
 from app.packet_processor import start_historical_dm_decryption
+from app.path_utils import first_path_hop
 from app.radio import radio_manager
 from app.repository import (
     AmbiguousPublicKeyPrefixError,
@@ -201,11 +202,11 @@ async def get_contact_detail(public_key: str) -> ContactDetail:
         if span_hours > 0:
             advert_frequency = round(total_observations / span_hours, 2)
 
-    # Compute nearest repeaters from first-hop prefixes in advert paths
-    first_hop_stats: dict[str, dict] = {}  # prefix -> {heard_count, path_len, last_seen}
+    # Compute nearest repeaters from first hops in advert paths
+    first_hop_stats: dict[str, dict] = {}  # first hop -> {heard_count, path_len, last_seen}
     for p in advert_paths:
-        if p.path and len(p.path) >= 2:
-            prefix = p.path[:2].lower()
+        prefix = first_path_hop(p.path, p.path_len)
+        if prefix:
             if prefix not in first_hop_stats:
                 first_hop_stats[prefix] = {
                     "heard_count": 0,

@@ -23,6 +23,7 @@ from typing import Any, Protocol
 import aiomqtt
 import nacl.bindings
 
+from app.decoder import decode_path_metadata
 from app.fanout.mqtt_base import BaseMqttPublisher
 
 logger = logging.getLogger(__name__)
@@ -146,16 +147,16 @@ def _calculate_packet_hash(raw_bytes: bytes) -> str:
         if has_transport:
             offset += 4  # Skip 4 bytes of transport codes
 
-        # Read path_len (1 byte on wire). Invalid/truncated packets map to zero hash.
+        # Read packed path metadata. Invalid/truncated packets map to zero hash.
         if offset >= len(raw_bytes):
             return "0" * 16
-        path_len = raw_bytes[offset]
+        path_len, _path_hash_size, path_byte_length = decode_path_metadata(raw_bytes[offset])
         offset += 1
 
         # Skip past path to get to payload. Invalid/truncated packets map to zero hash.
-        if len(raw_bytes) < offset + path_len:
+        if len(raw_bytes) < offset + path_byte_length:
             return "0" * 16
-        payload_start = offset + path_len
+        payload_start = offset + path_byte_length
         payload_data = raw_bytes[payload_start:]
 
         # Hash: payload_type(1 byte) [+ path_len as uint16_t LE for TRACE] + payload_data
@@ -202,20 +203,24 @@ def _decode_packet_fields(raw_bytes: bytes) -> tuple[str, str, str, list[str], i
         if len(raw_bytes) <= offset:
             return route, packet_type, payload_len, path_values, payload_type
 
-        path_len = raw_bytes[offset]
+        path_len, path_hash_size, path_byte_length = decode_path_metadata(raw_bytes[offset])
         offset += 1
 
-        if len(raw_bytes) < offset + path_len:
+        if len(raw_bytes) < offset + path_byte_length:
             return route, packet_type, payload_len, path_values, payload_type
 
-        path_bytes = raw_bytes[offset : offset + path_len]
-        offset += path_len
+        path_bytes = raw_bytes[offset : offset + path_byte_length]
+        offset += path_byte_length
 
         payload_type = (header >> 2) & 0x0F
         route = _ROUTE_MAP.get(route_type, "U")
         packet_type = str(payload_type)
         payload_len = str(max(0, len(raw_bytes) - offset))
-        path_values = [f"{b:02x}" for b in path_bytes]
+        path_values = [
+            path_bytes[i : i + path_hash_size].hex()
+            for i in range(0, len(path_bytes), path_hash_size)
+            if i + path_hash_size <= len(path_bytes)
+        ]
 
         return route, packet_type, payload_len, path_values, payload_type
     except Exception:

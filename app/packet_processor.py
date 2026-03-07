@@ -91,9 +91,7 @@ async def _handle_duplicate_message(
 
     # Add path if provided
     if path is not None:
-        paths = await MessageRepository.add_path(
-            existing_msg.id, path, received, path_len=path_len
-        )
+        paths = await MessageRepository.add_path(existing_msg.id, path, received, path_len=path_len)
     else:
         # Get current paths for broadcast
         paths = existing_msg.paths or []
@@ -731,6 +729,7 @@ async def _process_advertisement(
         path_hex=new_path_hex,
         timestamp=timestamp,
         max_paths=10,
+        path_len=new_path_len,
     )
 
     # Record name history

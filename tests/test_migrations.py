@@ -3,7 +3,13 @@
 import aiosqlite
 import pytest
 
-from app.migrations import get_version, run_migrations, set_version
+from app.migrations import (
+    _extract_path_from_packet,
+    _extract_payload_for_hash,
+    get_version,
+    run_migrations,
+    set_version,
+)
 
 
 class TestMigrationSystem:
@@ -29,6 +35,14 @@ class TestMigrationSystem:
             assert version == 5
         finally:
             await conn.close()
+
+    def test_extract_payload_for_hash_handles_multi_byte_hops(self):
+        raw = bytes([0x15, 0x42, 0x20, 0x27, 0x30, 0x31]) + b"\xde\xad\xbe\xef"
+        assert _extract_payload_for_hash(raw) == b"\xde\xad\xbe\xef"
+
+    def test_extract_path_from_packet_handles_multi_byte_hops(self):
+        raw = bytes([0x15, 0x42, 0x20, 0x27, 0x30, 0x31]) + b"\xde\xad\xbe\xef"
+        assert _extract_path_from_packet(raw) == "20273031"
 
 
 class TestMigration001:

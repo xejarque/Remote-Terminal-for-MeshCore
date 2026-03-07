@@ -260,6 +260,12 @@ class TestPacketFormatConversion:
         assert result["route"] == "D"
         assert result["path"] == "aa,bb"
 
+    def test_adds_path_for_multi_byte_direct_route(self):
+        data = {"timestamp": 0, "data": "024220273031CC", "snr": 1.0, "rssi": -70}
+        result = _format_raw_packet(data, "Node", "AA" * 32)
+        assert result["route"] == "D"
+        assert result["path"] == "2027,3031"
+
     def test_direct_route_includes_empty_path_field(self):
         data = {"timestamp": 0, "data": "0200", "snr": 1.0, "rssi": -70}
         result = _format_raw_packet(data, "Node", "AA" * 32)
@@ -354,6 +360,30 @@ class TestCalculatePacketHash:
         path_data = b"\xaa\xbb"  # 2 bytes of path
         payload = b"\x48\x65\x6c\x6c\x6f"  # "Hello"
         raw = bytes([0x09, 0x02]) + path_data + payload
+        result = _calculate_packet_hash(raw)
+
+        expected = hashlib.sha256(bytes([2]) + payload).hexdigest()[:16].upper()
+        assert result == expected
+
+    def test_multi_byte_path_uses_hop_count_for_trace_hash(self):
+        import hashlib
+
+        payload = b"\x99\x88"
+        raw = bytes([0x25, 0x42, 0x20, 0x27, 0x30, 0x31]) + payload
+        result = _calculate_packet_hash(raw)
+
+        expected = (
+            hashlib.sha256(bytes([9]) + (2).to_bytes(2, byteorder="little") + payload)
+            .hexdigest()[:16]
+            .upper()
+        )
+        assert result == expected
+
+    def test_multi_byte_path_skips_full_byte_length(self):
+        import hashlib
+
+        payload = b"\xde\xad\xbe\xef"
+        raw = bytes([0x09, 0x42, 0x20, 0x27, 0x30, 0x31]) + payload
         result = _calculate_packet_hash(raw)
 
         expected = hashlib.sha256(bytes([2]) + payload).hexdigest()[:16].upper()

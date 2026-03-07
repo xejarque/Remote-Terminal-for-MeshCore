@@ -44,8 +44,13 @@ def _format_body(data: dict, *, include_path: bool) -> str:
     via = ""
     if include_path:
         paths = data.get("paths")
-        if paths and isinstance(paths, list) and len(paths) > 0:
-            path_str = paths[0].get("path", "") if isinstance(paths[0], dict) else ""
+        first_path = (
+            paths[0]
+            if isinstance(paths, list) and len(paths) > 0 and isinstance(paths[0], dict)
+            else None
+        )
+        if first_path is not None:
+            path_str = first_path.get("path", "")
         else:
             path_str = None
 
@@ -56,7 +61,7 @@ def _format_body(data: dict, *, include_path: bool) -> str:
             if path_str == "":
                 via = " **via:** [`direct`]"
             else:
-                path_len = paths[0].get("path_len") if isinstance(paths[0], dict) else None
+                path_len = first_path.get("path_len") if first_path is not None else None
                 hop_chars = (
                     len(path_str) // path_len
                     if isinstance(path_len, int) and path_len > 0 and len(path_str) % path_len == 0

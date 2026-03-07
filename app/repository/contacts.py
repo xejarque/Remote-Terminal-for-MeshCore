@@ -8,6 +8,7 @@ from app.models import (
     ContactAdvertPathSummary,
     ContactNameHistory,
 )
+from app.path_utils import first_path_hop
 
 
 class AmbiguousPublicKeyPrefixError(ValueError):
@@ -287,7 +288,7 @@ class ContactAdvertPathRepository:
     @staticmethod
     def _row_to_path(row) -> ContactAdvertPath:
         path = row["path_hex"] or ""
-        next_hop = path[:2].lower() if len(path) >= 2 else None
+        next_hop = first_path_hop(path, row["path_len"])
         return ContactAdvertPath(
             path=path,
             path_len=row["path_len"],
@@ -303,6 +304,7 @@ class ContactAdvertPathRepository:
         path_hex: str,
         timestamp: int,
         max_paths: int = 10,
+        path_len: int | None = None,
     ) -> None:
         """
         Upsert a unique advert path observation for a contact and prune to N most recent.
@@ -312,7 +314,7 @@ class ContactAdvertPathRepository:
 
         normalized_key = public_key.lower()
         normalized_path = path_hex.lower()
-        path_len = len(normalized_path) // 2
+        normalized_path_len = path_len if isinstance(path_len, int) else len(normalized_path) // 2
 
         await db.conn.execute(
             """
@@ -324,7 +326,7 @@ class ContactAdvertPathRepository:
                 path_len = excluded.path_len,
                 heard_count = contact_advert_paths.heard_count + 1
             """,
-            (normalized_key, normalized_path, path_len, timestamp, timestamp),
+            (normalized_key, normalized_path, normalized_path_len, timestamp, timestamp),
         )
 
         # Keep only the N most recent unique paths per contact.
