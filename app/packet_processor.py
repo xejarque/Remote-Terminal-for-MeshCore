@@ -57,6 +57,7 @@ async def _handle_duplicate_message(
     text: str,
     sender_timestamp: int,
     path: str | None,
+    path_len: int | None,
     received: int,
 ) -> None:
     """Handle a duplicate message by updating paths/acks on the existing record.
@@ -90,7 +91,9 @@ async def _handle_duplicate_message(
 
     # Add path if provided
     if path is not None:
-        paths = await MessageRepository.add_path(existing_msg.id, path, received)
+        paths = await MessageRepository.add_path(
+            existing_msg.id, path, received, path_len=path_len
+        )
     else:
         # Get current paths for broadcast
         paths = existing_msg.paths or []
@@ -128,6 +131,7 @@ async def create_message_from_decrypted(
     timestamp: int,
     received_at: int | None = None,
     path: str | None = None,
+    path_len: int | None = None,
     channel_name: str | None = None,
     realtime: bool = True,
 ) -> int | None:
@@ -150,6 +154,9 @@ async def create_message_from_decrypted(
     Returns the message ID if created, None if duplicate.
     """
     received = received_at or int(time.time())
+    normalized_path_len = (
+        path_len if isinstance(path_len, int) else (len(path) // 2 if path is not None else None)
+    )
 
     # Format the message text with sender prefix if present
     text = f"{sender}: {message_text}" if sender else message_text
@@ -172,6 +179,7 @@ async def create_message_from_decrypted(
         sender_timestamp=timestamp,
         received_at=received,
         path=path,
+        path_len=normalized_path_len,
         sender_name=sender,
         sender_key=resolved_sender_key,
     )
@@ -182,7 +190,14 @@ async def create_message_from_decrypted(
         # 2. Same message arrives via multiple paths before first is committed
         # In either case, add the path to the existing message.
         await _handle_duplicate_message(
-            packet_id, "CHAN", channel_key_normalized, text, timestamp, path, received
+            packet_id,
+            "CHAN",
+            channel_key_normalized,
+            text,
+            timestamp,
+            path,
+            normalized_path_len,
+            received,
         )
         return None
 
@@ -193,7 +208,11 @@ async def create_message_from_decrypted(
 
     # Build paths array for broadcast
     # Use "is not None" to include empty string (direct/0-hop messages)
-    paths = [MessagePath(path=path or "", received_at=received)] if path is not None else None
+    paths = (
+        [MessagePath(path=path or "", received_at=received, path_len=normalized_path_len)]
+        if path is not None
+        else None
+    )
 
     # Broadcast new message to connected clients (and fanout modules when realtime)
     broadcast_event(
@@ -223,6 +242,7 @@ async def create_dm_message_from_decrypted(
     our_public_key: str | None,
     received_at: int | None = None,
     path: str | None = None,
+    path_len: int | None = None,
     outgoing: bool = False,
     realtime: bool = True,
 ) -> int | None:
@@ -255,6 +275,9 @@ async def create_dm_message_from_decrypted(
         return None
 
     received = received_at or int(time.time())
+    normalized_path_len = (
+        path_len if isinstance(path_len, int) else (len(path) // 2 if path is not None else None)
+    )
 
     # conversation_key is always the other party's public key
     conversation_key = their_public_key.lower()
@@ -270,6 +293,7 @@ async def create_dm_message_from_decrypted(
         sender_timestamp=decrypted.timestamp,
         received_at=received,
         path=path,
+        path_len=normalized_path_len,
         outgoing=outgoing,
         sender_key=conversation_key if not outgoing else None,
         sender_name=sender_name,
@@ -284,6 +308,7 @@ async def create_dm_message_from_decrypted(
             decrypted.message,
             decrypted.timestamp,
             path,
+            normalized_path_len,
             received,
         )
         return None
@@ -299,7 +324,11 @@ async def create_dm_message_from_decrypted(
     await RawPacketRepository.mark_decrypted(packet_id, msg_id)
 
     # Build paths array for broadcast
-    paths = [MessagePath(path=path or "", received_at=received)] if path is not None else None
+    paths = (
+        [MessagePath(path=path or "", received_at=received, path_len=normalized_path_len)]
+        if path is not None
+        else None
+    )
 
     # Broadcast new message to connected clients (and fanout modules when realtime)
     sender_name = contact.name if contact and not outgoing else None
@@ -391,6 +420,7 @@ async def run_historical_dm_decryption(
                 our_public_key=our_public_key_bytes.hex(),
                 received_at=packet_timestamp,
                 path=path_hex,
+                path_len=packet_info.path_length if packet_info else None,
                 outgoing=outgoing,
                 realtime=False,  # Historical decryption should not trigger fanout
             )
@@ -606,6 +636,7 @@ async def _process_group_text(
             timestamp=decrypted.timestamp,
             received_at=timestamp,
             path=packet_info.path.hex() if packet_info else None,
+            path_len=packet_info.path_length if packet_info else None,
         )
 
         return {
@@ -872,6 +903,7 @@ async def _process_direct_message(
                 our_public_key=our_public_key.hex(),
                 received_at=timestamp,
                 path=packet_info.path.hex() if packet_info else None,
+                path_len=packet_info.path_length if packet_info else None,
                 outgoing=is_outgoing,
             )
 

@@ -678,6 +678,7 @@ class TestMessageBroadcastStructure:
         assert broadcast["paths"] is not None
         assert len(broadcast["paths"]) == 1
         assert broadcast["paths"][0]["path"] == ""  # Empty string = direct/flood
+        assert broadcast["paths"][0]["path_len"] == 0
 
 
 class TestRawPacketStorage:
@@ -927,6 +928,7 @@ class TestCreateDMMessageFromDecrypted:
                 our_public_key=self.FACE12_PUB,
                 received_at=1700000001,
                 path="aabbcc",  # Path through 3 repeaters
+                path_len=3,
                 outgoing=False,
             )
 
@@ -937,6 +939,7 @@ class TestCreateDMMessageFromDecrypted:
         assert broadcast["paths"] is not None
         assert len(broadcast["paths"]) == 1
         assert broadcast["paths"][0]["path"] == "aabbcc"
+        assert broadcast["paths"][0]["path_len"] == 3
         assert broadcast["paths"][0]["received_at"] == 1700000001
 
 

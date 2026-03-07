@@ -19,6 +19,7 @@ from app.decoder import (
     decrypt_group_text,
     derive_public_key,
     derive_shared_secret,
+    extract_payload,
     parse_packet,
     try_decrypt_dm,
     try_decrypt_packet_with_channel_key,
@@ -81,7 +82,30 @@ class TestPacketParsing:
         assert result.route_type == RouteType.DIRECT
         assert result.payload_type == PayloadType.TEXT_MESSAGE
         assert result.path_length == 3
+        assert result.path_hash_size == 1
+        assert result.path_byte_length == 3
         assert result.payload == b"msg"
+
+    def test_parse_packet_with_two_byte_hops(self):
+        """Packets with multi-byte hop identifiers decode hop count separately from byte length."""
+        packet = bytes([0x0A, 0x42, 0x01, 0x02, 0x03, 0x04]) + b"msg"
+
+        result = parse_packet(packet)
+
+        assert result is not None
+        assert result.route_type == RouteType.DIRECT
+        assert result.payload_type == PayloadType.TEXT_MESSAGE
+        assert result.path_length == 2
+        assert result.path_hash_size == 2
+        assert result.path_byte_length == 4
+        assert result.path == bytes([0x01, 0x02, 0x03, 0x04])
+        assert result.payload == b"msg"
+
+    def test_extract_payload_with_two_byte_hops(self):
+        """Payload extraction skips the full path byte length for multi-byte hops."""
+        packet = bytes([0x15, 0x42, 0xAA, 0xBB, 0xCC, 0xDD]) + b"payload_data"
+
+        assert extract_payload(packet) == b"payload_data"
 
     def test_parse_transport_flood_skips_transport_code(self):
         """TRANSPORT_FLOOD packets have 4-byte transport code to skip."""

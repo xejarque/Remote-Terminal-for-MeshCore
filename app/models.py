@@ -19,6 +19,26 @@ class Contact(BaseModel):
     last_read_at: int | None = None  # Server-side read state tracking
     first_seen: int | None = None
 
+    @staticmethod
+    def _derive_out_path_hash_mode(path_hex: str | None, path_len: int) -> int:
+        """Infer the contact path hash mode from stored path bytes and hop count."""
+        if path_len < 0:
+            return -1
+        if path_len == 0 or not path_hex:
+            return 0
+
+        if len(path_hex) % 2 != 0:
+            return 0
+
+        path_bytes = len(path_hex) // 2
+        if path_bytes == 0 or path_bytes % path_len != 0:
+            return 0
+
+        bytes_per_hop = path_bytes // path_len
+        if bytes_per_hop < 1:
+            return 0
+        return bytes_per_hop - 1
+
     def to_radio_dict(self) -> dict:
         """Convert to the dict format expected by meshcore radio commands.
 
@@ -32,6 +52,9 @@ class Contact(BaseModel):
             "flags": self.flags,
             "out_path": self.last_path or "",
             "out_path_len": self.last_path_len,
+            "out_path_hash_mode": self._derive_out_path_hash_mode(
+                self.last_path, self.last_path_len
+            ),
             "adv_lat": self.lat if self.lat is not None else 0.0,
             "adv_lon": self.lon if self.lon is not None else 0.0,
             "last_advert": self.last_advert if self.last_advert is not None else 0,
@@ -176,8 +199,11 @@ class ChannelDetail(BaseModel):
 class MessagePath(BaseModel):
     """A single path that a message took to reach us."""
 
-    path: str = Field(description="Hex-encoded routing path (2 chars per hop)")
+    path: str = Field(description="Hex-encoded routing path")
     received_at: int = Field(description="Unix timestamp when this path was received")
+    path_len: int | None = Field(
+        default=None, description="Number of hops in the path, when known"
+    )
 
 
 class Message(BaseModel):

@@ -125,6 +125,39 @@ class TestOutgoingDMBroadcast:
         assert exc_info.value.status_code == 409
         assert "ambiguous" in exc_info.value.detail.lower()
 
+    @pytest.mark.asyncio
+    async def test_send_dm_add_contact_preserves_out_path_hash_mode(self, test_db):
+        """Direct-send contact export includes the inferred path hash mode for multi-byte routes."""
+        mc = _make_mc()
+        pub_key = "cd" * 32
+        await ContactRepository.upsert(
+            {
+                "public_key": pub_key,
+                "name": "Bob",
+                "type": 0,
+                "flags": 0,
+                "last_path": "11223344",
+                "last_path_len": 2,
+                "last_advert": None,
+                "lat": None,
+                "lon": None,
+                "last_seen": None,
+                "on_radio": False,
+                "last_contacted": None,
+            }
+        )
+
+        with (
+            patch("app.routers.messages.require_connected", return_value=mc),
+            patch.object(radio_manager, "_meshcore", mc),
+        ):
+            await send_direct_message(SendDirectMessageRequest(destination=pub_key, text="hi"))
+
+        add_contact_arg = mc.commands.add_contact.await_args.args[0]
+        assert add_contact_arg["out_path"] == "11223344"
+        assert add_contact_arg["out_path_len"] == 2
+        assert add_contact_arg["out_path_hash_mode"] == 1
+
 
 class TestOutgoingChannelBroadcast:
     """Test that outgoing channel messages are broadcast via broadcast_event for fanout dispatch."""

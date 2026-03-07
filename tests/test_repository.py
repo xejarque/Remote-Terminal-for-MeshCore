@@ -36,12 +36,13 @@ class TestMessageRepositoryAddPath:
         msg_id = await _create_message(test_db)
 
         result = await MessageRepository.add_path(
-            message_id=msg_id, path="1A2B", received_at=1700000000
+            message_id=msg_id, path="1A2B", received_at=1700000000, path_len=1
         )
 
         assert len(result) == 1
         assert result[0].path == "1A2B"
         assert result[0].received_at == 1700000000
+        assert result[0].path_len == 1
 
     @pytest.mark.asyncio
     async def test_add_path_to_message_with_existing_paths(self, test_db):

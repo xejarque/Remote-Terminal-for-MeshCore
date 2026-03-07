@@ -79,9 +79,11 @@ class PacketInfo:
     route_type: RouteType
     payload_type: PayloadType
     payload_version: int
-    path_length: int
-    path: bytes  # The routing path (empty if path_length is 0)
+    path_length: int  # Hop count encoded in the lower 6 bits of the path byte
+    path: bytes  # The routing path bytes (empty if path_length is 0)
     payload: bytes
+    path_hash_size: int = 1  # Bytes per hop encoded in the upper 2 bits of the path byte
+    path_byte_length: int = 0
 
 
 def calculate_channel_hash(channel_key: bytes) -> str:
@@ -93,6 +95,14 @@ def calculate_channel_hash(channel_key: bytes) -> str:
     return format(hash_bytes[0], "02x")
 
 
+def _decode_path_metadata(path_byte: int) -> tuple[int, int, int]:
+    """Decode the packed path byte into hop count and byte length."""
+    path_hash_size = (path_byte >> 6) + 1
+    path_length = path_byte & 0x3F
+    path_byte_length = path_length * path_hash_size
+    return path_length, path_hash_size, path_byte_length
+
+
 def extract_payload(raw_packet: bytes) -> bytes | None:
     """
     Extract just the payload from a raw packet, skipping header and path.
@@ -100,8 +110,10 @@ def extract_payload(raw_packet: bytes) -> bytes | None:
     Packet structure:
     - Byte 0: header (route_type, payload_type, version)
     - For TRANSPORT routes: bytes 1-4 are transport codes
-    - Next byte: path_length
-    - Next path_length bytes: path data
+    - Next byte: packed path metadata
+      - upper 2 bits: bytes per hop minus 1
+      - lower 6 bits: hop count
+    - Next hop_count * path_hash_size bytes: path data
     - Remaining: payload
 
     Returns the payload bytes, or None if packet is malformed.
@@ -120,16 +132,16 @@ def extract_payload(raw_packet: bytes) -> bytes | None:
                 return None
             offset += 4
 
-        # Get path length
+        # Decode packed path metadata
         if len(raw_packet) < offset + 1:
             return None
-        path_length = raw_packet[offset]
+        path_length, _path_hash_size, path_byte_length = _decode_path_metadata(raw_packet[offset])
         offset += 1
 
         # Skip path data
-        if len(raw_packet) < offset + path_length:
+        if len(raw_packet) < offset + path_byte_length:
             return None
-        offset += path_length
+        offset += path_byte_length
 
         # Rest is payload
         return raw_packet[offset:]
@@ -156,17 +168,17 @@ def parse_packet(raw_packet: bytes) -> PacketInfo | None:
                 return None
             offset += 4
 
-        # Get path length
+        # Decode packed path metadata
         if len(raw_packet) < offset + 1:
             return None
-        path_length = raw_packet[offset]
+        path_length, path_hash_size, path_byte_length = _decode_path_metadata(raw_packet[offset])
         offset += 1
 
         # Extract path data
-        if len(raw_packet) < offset + path_length:
+        if len(raw_packet) < offset + path_byte_length:
             return None
-        path = raw_packet[offset : offset + path_length]
-        offset += path_length
+        path = raw_packet[offset : offset + path_byte_length]
+        offset += path_byte_length
 
         # Rest is payload
         payload = raw_packet[offset:]
@@ -178,6 +190,8 @@ def parse_packet(raw_packet: bytes) -> PacketInfo | None:
             path_length=path_length,
             path=path,
             payload=payload,
+            path_hash_size=path_hash_size,
+            path_byte_length=path_byte_length,
         )
     except (ValueError, IndexError):
         return None

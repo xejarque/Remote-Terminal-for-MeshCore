@@ -56,7 +56,13 @@ def _format_body(data: dict, *, include_path: bool) -> str:
             if path_str == "":
                 via = " **via:** [`direct`]"
             else:
-                hops = [path_str[i : i + 2] for i in range(0, len(path_str), 2)]
+                path_len = paths[0].get("path_len") if isinstance(paths[0], dict) else None
+                hop_chars = (
+                    len(path_str) // path_len
+                    if isinstance(path_len, int) and path_len > 0 and len(path_str) % path_len == 0
+                    else 2
+                )
+                hops = [path_str[i : i + hop_chars] for i in range(0, len(path_str), hop_chars)]
                 if hops:
                     hop_list = ", ".join(f"`{h}`" for h in hops)
                     via = f" **via:** [{hop_list}]"

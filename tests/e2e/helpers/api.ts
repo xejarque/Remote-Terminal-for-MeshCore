@@ -127,6 +127,7 @@ export function deleteContact(publicKey: string): Promise<{ status: string }> {
 export interface MessagePath {
   path: string;
   received_at: number;
+  path_len?: number;
 }
 
 export interface Message {

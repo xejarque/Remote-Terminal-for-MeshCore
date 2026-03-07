@@ -2,7 +2,7 @@ import type { Contact, RadioConfig, MessagePath } from '../types';
 import { CONTACT_TYPE_REPEATER } from '../types';
 
 export interface PathHop {
-  prefix: string; // 2-char hex prefix (e.g., "1A")
+  prefix: string; // Hex prefix for a single hop
   matches: Contact[]; // Matched repeaters (empty=unknown, multiple=ambiguous)
   distanceFromPrev: number | null; // km from previous hop
 }
@@ -30,20 +30,21 @@ export interface SenderInfo {
 }
 
 /**
- * Split hex string into 2-char hops
+ * Split hex string into hop-sized chunks.
  */
-export function parsePathHops(path: string | null | undefined): string[] {
+export function parsePathHops(path: string | null | undefined, pathLen?: number): string[] {
   if (!path || path.length === 0) {
     return [];
   }
 
   const normalized = path.toUpperCase();
+  const hopCount = pathLen ?? Math.floor(normalized.length / 2);
+  const charsPerHop =
+    hopCount > 0 && normalized.length % hopCount === 0 ? normalized.length / hopCount : 2;
   const hops: string[] = [];
 
-  for (let i = 0; i < normalized.length; i += 2) {
-    if (i + 1 < normalized.length) {
-      hops.push(normalized.slice(i, i + 2));
-    }
+  for (let i = 0; i + charsPerHop <= normalized.length; i += charsPerHop) {
+    hops.push(normalized.slice(i, i + charsPerHop));
   }
 
   return hops;
@@ -148,11 +149,11 @@ function sortContactsByDistance(
 /**
  * Get simple hop count from path string
  */
-function getHopCount(path: string | null | undefined): number {
+function getHopCount(path: string | null | undefined, pathLen?: number): number {
   if (!path || path.length === 0) {
     return 0;
   }
-  return Math.floor(path.length / 2);
+  return pathLen ?? Math.floor(path.length / 2);
 }
 
 /**
@@ -170,7 +171,7 @@ export function formatHopCounts(paths: MessagePath[] | null | undefined): {
   }
 
   // Get hop counts for all paths and sort ascending
-  const hopCounts = paths.map((p) => getHopCount(p.path)).sort((a, b) => a - b);
+  const hopCounts = paths.map((p) => getHopCount(p.path, p.path_len)).sort((a, b) => a - b);
 
   const allDirect = hopCounts.every((h) => h === 0);
   const hasMultiple = paths.length > 1;
@@ -189,9 +190,10 @@ export function resolvePath(
   path: string | null | undefined,
   sender: SenderInfo,
   contacts: Contact[],
-  config: RadioConfig | null
+  config: RadioConfig | null,
+  pathLen?: number
 ): ResolvedPath {
-  const hopPrefixes = parsePathHops(path);
+  const hopPrefixes = parsePathHops(path, pathLen);
 
   // Build sender info
   const senderPrefix = sender.publicKeyOrPrefix.toUpperCase().slice(0, 2);

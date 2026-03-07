@@ -60,6 +60,10 @@ describe('parsePathHops', () => {
     expect(parsePathHops('1A2B3C')).toEqual(['1A', '2B', '3C']);
   });
 
+  it('parses multi-byte hops when path length is provided', () => {
+    expect(parsePathHops('1A2B3C4D', 2)).toEqual(['1A2B', '3C4D']);
+  });
+
   it('converts to uppercase', () => {
     expect(parsePathHops('1a2b')).toEqual(['1A', '2B']);
   });
@@ -195,6 +199,29 @@ describe('resolvePath', () => {
     expect(result.hops[1].matches[0].name).toBe('Repeater2');
     expect(result.receiver.name).toBe('MyRadio');
     expect(result.receiver.prefix).toBe('FF');
+  });
+
+  it('resolves multi-byte hop prefixes when path length is provided', () => {
+    const wideContacts = [
+      createContact({
+        public_key: '1A2B' + 'A'.repeat(60),
+        name: 'WideRepeater1',
+        type: CONTACT_TYPE_REPEATER,
+      }),
+      createContact({
+        public_key: '3C4D' + 'B'.repeat(60),
+        name: 'WideRepeater2',
+        type: CONTACT_TYPE_REPEATER,
+      }),
+    ];
+
+    const result = resolvePath('1A2B3C4D', sender, wideContacts, config, 2);
+
+    expect(result.hops).toHaveLength(2);
+    expect(result.hops[0].prefix).toBe('1A2B');
+    expect(result.hops[0].matches[0].name).toBe('WideRepeater1');
+    expect(result.hops[1].prefix).toBe('3C4D');
+    expect(result.hops[1].matches[0].name).toBe('WideRepeater2');
   });
 
   it('handles unknown repeaters (no matches)', () => {
@@ -540,6 +567,15 @@ describe('formatHopCounts', () => {
 
   it('formats single multi-hop path with hop count', () => {
     const result = formatHopCounts([{ path: '1A2B', received_at: 1700000000 }]);
+    expect(result.display).toBe('2');
+    expect(result.allDirect).toBe(false);
+    expect(result.hasMultiple).toBe(false);
+  });
+
+  it('uses explicit path_len for multi-byte hop counts', () => {
+    const result = formatHopCounts([
+      { path: '1A2B3C4D', path_len: 2, received_at: 1700000000 },
+    ]);
     expect(result.display).toBe('2');
     expect(result.allDirect).toBe(false);
     expect(result.hasMultiple).toBe(false);

@@ -652,6 +652,21 @@ class TestAppriseFormatBody:
         assert "`20`" in body
         assert "`27`" in body
 
+    def test_dm_with_multi_byte_path(self):
+        from app.fanout.apprise_mod import _format_body
+
+        body = _format_body(
+            {
+                "type": "PRIV",
+                "text": "hi",
+                "sender_name": "Alice",
+                "paths": [{"path": "20273031", "path_len": 2}],
+            },
+            include_path=True,
+        )
+        assert "`2027`" in body
+        assert "`3031`" in body
+
     def test_dm_no_path_shows_direct(self):
         from app.fanout.apprise_mod import _format_body
 
