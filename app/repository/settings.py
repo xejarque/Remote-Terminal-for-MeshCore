@@ -28,7 +28,7 @@ class AppSettingsRepository:
             SELECT max_radio_contacts, favorites, auto_decrypt_dm_on_advert,
                    sidebar_sort_order, last_message_times, preferences_migrated,
                    advert_interval, last_advert_time, flood_scope,
-                   blocked_keys, blocked_names
+                   blocked_keys, blocked_names, telemetry_tracked_keys
             FROM app_settings WHERE id = 1
             """
         )
@@ -80,6 +80,14 @@ class AppSettingsRepository:
             except (json.JSONDecodeError, TypeError):
                 blocked_names = []
 
+        # Parse telemetry_tracked_keys JSON
+        telemetry_tracked_keys: list[str] = []
+        if row["telemetry_tracked_keys"]:
+            try:
+                telemetry_tracked_keys = json.loads(row["telemetry_tracked_keys"])
+            except (json.JSONDecodeError, TypeError):
+                telemetry_tracked_keys = []
+
         # Validate sidebar_sort_order (fallback to "recent" if invalid)
         sort_order = row["sidebar_sort_order"]
         if sort_order not in ("recent", "alpha"):
@@ -97,6 +105,7 @@ class AppSettingsRepository:
             flood_scope=row["flood_scope"] or "",
             blocked_keys=blocked_keys,
             blocked_names=blocked_names,
+            telemetry_tracked_keys=telemetry_tracked_keys,
         )
 
     @staticmethod
@@ -112,6 +121,7 @@ class AppSettingsRepository:
         flood_scope: str | None = None,
         blocked_keys: list[str] | None = None,
         blocked_names: list[str] | None = None,
+        telemetry_tracked_keys: list[str] | None = None,
     ) -> AppSettings:
         """Update app settings. Only provided fields are updated."""
         updates = []
@@ -162,6 +172,10 @@ class AppSettingsRepository:
             updates.append("blocked_names = ?")
             params.append(json.dumps(blocked_names))
 
+        if telemetry_tracked_keys is not None:
+            updates.append("telemetry_tracked_keys = ?")
+            params.append(json.dumps(telemetry_tracked_keys))
+
         if updates:
             query = f"UPDATE app_settings SET {', '.join(updates)} WHERE id = 1"
             await db.conn.execute(query, params)
@@ -210,6 +224,17 @@ class AppSettingsRepository:
         else:
             new_names = settings.blocked_names + [name]
         return await AppSettingsRepository.update(blocked_names=new_names)
+
+    @staticmethod
+    async def toggle_telemetry_tracked_key(key: str) -> AppSettings:
+        """Toggle a public key in the telemetry tracking list. Keys are normalized to lowercase."""
+        normalized = key.lower()
+        settings = await AppSettingsRepository.get()
+        if normalized in settings.telemetry_tracked_keys:
+            new_keys = [k for k in settings.telemetry_tracked_keys if k != normalized]
+        else:
+            new_keys = settings.telemetry_tracked_keys + [normalized]
+        return await AppSettingsRepository.update(telemetry_tracked_keys=new_keys)
 
     @staticmethod
     async def migrate_preferences_from_frontend(

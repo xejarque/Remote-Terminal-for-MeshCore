@@ -360,6 +360,13 @@ async def run_migrations(conn: aiosqlite.Connection) -> int:
         await set_version(conn, 46)
         applied += 1
 
+    # Migration 47: Repeater telemetry history table + tracking opt-in column
+    if version < 47:
+        logger.info("Applying migration 47: repeater telemetry history")
+        await _migrate_047_repeater_telemetry_history(conn)
+        await set_version(conn, 47)
+        applied += 1
+
     if applied > 0:
         logger.info(
             "Applied %d migration(s), schema now at version %d", applied, await get_version(conn)
@@ -2867,4 +2874,34 @@ async def _migrate_046_cleanup_orphaned_contact_child_rows(conn: aiosqlite.Conne
                 (orphan_key,),
             )
 
+    await conn.commit()
+
+
+async def _migrate_047_repeater_telemetry_history(conn: aiosqlite.Connection) -> None:
+    """Create repeater_telemetry_history table and add tracking opt-in column to app_settings."""
+    await conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS repeater_telemetry_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            public_key TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            battery_volts REAL NOT NULL,
+            uptime_seconds INTEGER,
+            noise_floor_dbm INTEGER,
+            FOREIGN KEY (public_key) REFERENCES contacts(public_key) ON DELETE CASCADE
+        )
+        """
+    )
+    await conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_repeater_telemetry_pk_ts
+            ON repeater_telemetry_history (public_key, timestamp)
+        """
+    )
+    try:
+        await conn.execute(
+            "ALTER TABLE app_settings ADD COLUMN telemetry_tracked_keys TEXT DEFAULT '[]'"
+        )
+    except Exception:
+        pass  # Column may already exist
     await conn.commit()

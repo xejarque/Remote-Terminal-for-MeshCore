@@ -63,6 +63,7 @@ const baseSettings: AppSettings = {
   flood_scope: '',
   blocked_keys: [],
   blocked_names: [],
+  telemetry_tracked_keys: [],
 };
 
 function renderModal(overrides?: {
