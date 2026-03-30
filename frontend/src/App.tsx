@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState } from 'react';
+import { useEffect, useCallback, useRef, useState, useMemo } from 'react';
 import { api } from './api';
 import { takePrefetchOrFetch } from './prefetch';
 import { useWebSocket } from './useWebSocket';
@@ -14,6 +14,8 @@ import {
   useConversationNavigation,
   useRealtimeAppState,
   useBrowserNotifications,
+  useFaviconBadge,
+  useUnreadTitle,
   useRawPacketStatsSession,
 } from './hooks';
 import { AppShell } from './components/AppShell';
@@ -22,6 +24,7 @@ import { DistanceUnitProvider } from './contexts/DistanceUnitContext';
 import { messageContainsMention } from './utils/messageParser';
 import { getStateKey } from './utils/conversationState';
 import type { Conversation, Message, RawPacket } from './types';
+import { CONTACT_TYPE_ROOM } from './types';
 
 interface ChannelUnreadMarker {
   channelId: string;
@@ -249,6 +252,21 @@ export function App() {
   } = useConversationMessages(activeConversation, targetMessageId);
   removeConversationMessagesRef.current = removeConversationMessages;
 
+  // Room servers replay stored history as a burst of DMs, all arriving with similar received_at
+  // but spanning a wide range of sender_timestamps. Sort by sender_timestamp for room contacts
+  // so the display reflects the original send order rather than our radio's receipt order.
+  const activeContactIsRoom =
+    activeConversation?.type === 'contact' &&
+    contacts.find((c) => c.public_key === activeConversation.id)?.type === CONTACT_TYPE_ROOM;
+  const sortedMessages = useMemo(() => {
+    if (!activeContactIsRoom || messages.length === 0) return messages;
+    return [...messages].sort((a, b) => {
+      const aTs = a.sender_timestamp ?? a.received_at;
+      const bTs = b.sender_timestamp ?? b.received_at;
+      return aTs !== bTs ? aTs - bTs : a.id - b.id;
+    });
+  }, [activeContactIsRoom, messages]);
+
   const {
     unreadCounts,
     mentions,
@@ -259,6 +277,8 @@ export function App() {
     markAllRead,
     refreshUnreads,
   } = useUnreadCounts(channels, contacts, activeConversation);
+  useFaviconBadge(unreadCounts, mentions, favorites);
+  useUnreadTitle(unreadCounts, favorites);
 
   useEffect(() => {
     if (activeConversation?.type !== 'channel') {
@@ -423,7 +443,7 @@ export function App() {
     config,
     health,
     favorites,
-    messages,
+    messages: sortedMessages,
     messagesLoading,
     loadingOlder,
     hasOlderMessages,
@@ -502,9 +522,7 @@ export function App() {
     onChannelCreate: handleCreateCrackedChannel,
   };
   const newMessageModalProps = {
-    contacts,
     undecryptedCount,
-    onSelectConversation: handleSelectConversationWithTargetReset,
     onCreateContact: handleCreateContact,
     onCreateChannel: handleCreateChannel,
     onCreateHashtagChannel: handleCreateHashtagChannel,

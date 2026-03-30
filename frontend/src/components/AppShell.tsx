@@ -1,4 +1,5 @@
 import { lazy, Suspense, useRef, type ComponentProps } from 'react';
+import { useSwipeable } from 'react-swipeable';
 
 import { StatusBar } from './StatusBar';
 import { Sidebar } from './Sidebar';
@@ -6,6 +7,7 @@ import { ConversationPane } from './ConversationPane';
 import { NewMessageModal } from './NewMessageModal';
 import { ContactInfoPane } from './ContactInfoPane';
 import { ChannelInfoPane } from './ChannelInfoPane';
+import { SecurityWarningModal } from './SecurityWarningModal';
 import { Toaster } from './ui/sonner';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
 import {
@@ -88,6 +90,24 @@ export function AppShell({
   contactInfoPaneProps,
   channelInfoPaneProps,
 }: AppShellProps) {
+  const swipeHandlers = useSwipeable({
+    onSwipedRight: ({ initial }) => {
+      if (initial[0] < 30 && !sidebarOpen && window.innerWidth < 768) {
+        onSidebarOpenChange(true);
+      }
+    },
+    trackTouch: true,
+    trackMouse: false,
+    preventScrollOnSwipe: true,
+  });
+
+  const closeSwipeHandlers = useSwipeable({
+    onSwipedLeft: () => onSidebarOpenChange(false),
+    trackTouch: true,
+    trackMouse: false,
+    preventScrollOnSwipe: false,
+  });
+
   const searchMounted = useRef(false);
   if (conversationPaneProps.activeConversation?.type === 'search') {
     searchMounted.current = true;
@@ -152,7 +172,7 @@ export function AppShell({
   );
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" {...swipeHandlers}>
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-2 focus:bg-primary focus:text-primary-foreground"
@@ -195,7 +215,9 @@ export function AppShell({
               <SheetTitle>Navigation</SheetTitle>
               <SheetDescription>Sidebar navigation</SheetDescription>
             </SheetHeader>
-            <div className="flex-1 overflow-hidden">{activeSidebarContent}</div>
+            <div className="flex-1 overflow-hidden" {...closeSwipeHandlers}>
+              {activeSidebarContent}
+            </div>
           </SheetContent>
         </Sheet>
 
@@ -283,12 +305,9 @@ export function AppShell({
         {...newMessageModalProps}
         open={showNewMessage}
         onClose={onCloseNewMessage}
-        onSelectConversation={(conv) => {
-          newMessageModalProps.onSelectConversation(conv);
-          onCloseNewMessage();
-        }}
       />
 
+      <SecurityWarningModal health={statusProps.health} />
       <ContactInfoPane {...contactInfoPaneProps} />
       <ChannelInfoPane {...channelInfoPaneProps} />
       <Toaster position="top-right" />

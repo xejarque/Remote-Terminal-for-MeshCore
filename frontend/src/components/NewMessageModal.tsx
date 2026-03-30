@@ -1,7 +1,5 @@
 import { useState, useRef } from 'react';
 import { Dice5 } from 'lucide-react';
-import type { Contact, Conversation } from '../types';
-import { getContactDisplayName } from '../utils/pubkey';
 import {
   Dialog,
   DialogContent,
@@ -17,14 +15,12 @@ import { Checkbox } from './ui/checkbox';
 import { Button } from './ui/button';
 import { toast } from './ui/sonner';
 
-type Tab = 'existing' | 'new-contact' | 'new-room' | 'hashtag';
+type Tab = 'new-contact' | 'new-channel' | 'hashtag';
 
 interface NewMessageModalProps {
   open: boolean;
-  contacts: Contact[];
   undecryptedCount: number;
   onClose: () => void;
-  onSelectConversation: (conversation: Conversation) => void;
   onCreateContact: (name: string, publicKey: string, tryHistorical: boolean) => Promise<void>;
   onCreateChannel: (name: string, key: string, tryHistorical: boolean) => Promise<void>;
   onCreateHashtagChannel: (name: string, tryHistorical: boolean) => Promise<void>;
@@ -32,18 +28,16 @@ interface NewMessageModalProps {
 
 export function NewMessageModal({
   open,
-  contacts,
   undecryptedCount,
   onClose,
-  onSelectConversation,
   onCreateContact,
   onCreateChannel,
   onCreateHashtagChannel,
 }: NewMessageModalProps) {
-  const [tab, setTab] = useState<Tab>('existing');
+  const [tab, setTab] = useState<Tab>('new-contact');
   const [name, setName] = useState('');
   const [contactKey, setContactKey] = useState('');
-  const [roomKey, setRoomKey] = useState('');
+  const [channelKey, setChannelKey] = useState('');
   const [tryHistorical, setTryHistorical] = useState(false);
   const [permitCapitals, setPermitCapitals] = useState(false);
   const [error, setError] = useState('');
@@ -53,7 +47,7 @@ export function NewMessageModal({
   const resetForm = () => {
     setName('');
     setContactKey('');
-    setRoomKey('');
+    setChannelKey('');
     setTryHistorical(false);
     setPermitCapitals(false);
     setError('');
@@ -71,12 +65,12 @@ export function NewMessageModal({
         }
         // handleCreateContact sets activeConversation with the backend-normalized key
         await onCreateContact(name.trim(), contactKey.trim(), tryHistorical);
-      } else if (tab === 'new-room') {
-        if (!name.trim() || !roomKey.trim()) {
-          setError('Room name and key are required');
+      } else if (tab === 'new-channel') {
+        if (!name.trim() || !channelKey.trim()) {
+          setError('Channel name and key are required');
           return;
         }
-        await onCreateChannel(name.trim(), roomKey.trim(), tryHistorical);
+        await onCreateChannel(name.trim(), channelKey.trim(), tryHistorical);
       } else if (tab === 'hashtag') {
         const channelName = name.trim();
         const validationError = validateHashtagName(channelName);
@@ -136,7 +130,7 @@ export function NewMessageModal({
     }
   };
 
-  const showHistoricalOption = tab !== 'existing' && undecryptedCount > 0;
+  const showHistoricalOption = undecryptedCount > 0;
 
   return (
     <Dialog
@@ -152,9 +146,8 @@ export function NewMessageModal({
         <DialogHeader>
           <DialogTitle>New Conversation</DialogTitle>
           <DialogDescription className="sr-only">
-            {tab === 'existing' && 'Select an existing contact to start a conversation'}
             {tab === 'new-contact' && 'Add a new contact by entering their name and public key'}
-            {tab === 'new-room' && 'Create a private room with a shared encryption key'}
+            {tab === 'new-channel' && 'Create a private channel with a shared encryption key'}
             {tab === 'hashtag' && 'Join a public hashtag channel'}
           </DialogDescription>
         </DialogHeader>
@@ -167,52 +160,11 @@ export function NewMessageModal({
           }}
           className="w-full"
         >
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="existing">Existing</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="new-contact">Contact</TabsTrigger>
-            <TabsTrigger value="new-room">Room</TabsTrigger>
-            <TabsTrigger value="hashtag">Hashtag</TabsTrigger>
+            <TabsTrigger value="new-channel">Private Channel</TabsTrigger>
+            <TabsTrigger value="hashtag">Hashtag Channel</TabsTrigger>
           </TabsList>
-
-          <TabsContent value="existing" className="mt-4">
-            <div className="max-h-[300px] overflow-y-auto rounded-md border">
-              {contacts.filter((contact) => contact.public_key.length === 64).length === 0 ? (
-                <div className="p-4 text-center text-muted-foreground">No contacts available</div>
-              ) : (
-                contacts
-                  .filter((contact) => contact.public_key.length === 64)
-                  .map((contact) => (
-                    <div
-                      key={contact.public_key}
-                      className="cursor-pointer px-4 py-2 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          (e.currentTarget as HTMLElement).click();
-                        }
-                      }}
-                      onClick={() => {
-                        onSelectConversation({
-                          type: 'contact',
-                          id: contact.public_key,
-                          name: getContactDisplayName(
-                            contact.name,
-                            contact.public_key,
-                            contact.last_advert
-                          ),
-                        });
-                        resetForm();
-                        onClose();
-                      }}
-                    >
-                      {getContactDisplayName(contact.name, contact.public_key, contact.last_advert)}
-                    </div>
-                  ))
-              )}
-            </div>
-          </TabsContent>
 
           <TabsContent value="new-contact" className="mt-4 space-y-4">
             <div className="space-y-2">
@@ -235,23 +187,23 @@ export function NewMessageModal({
             </div>
           </TabsContent>
 
-          <TabsContent value="new-room" className="mt-4 space-y-4">
+          <TabsContent value="new-channel" className="mt-4 space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="room-name">Room Name</Label>
+              <Label htmlFor="channel-name">Channel Name</Label>
               <Input
-                id="room-name"
+                id="channel-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Room name"
+                placeholder="Channel name"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="room-key">Room Key</Label>
+              <Label htmlFor="channel-key">Channel Key</Label>
               <div className="flex gap-2">
                 <Input
-                  id="room-key"
-                  value={roomKey}
-                  onChange={(e) => setRoomKey(e.target.value)}
+                  id="channel-key"
+                  value={channelKey}
+                  onChange={(e) => setChannelKey(e.target.value)}
                   placeholder="Pre-shared key (hex)"
                   className="flex-1"
                 />
@@ -265,7 +217,7 @@ export function NewMessageModal({
                     const hex = Array.from(bytes)
                       .map((b) => b.toString(16).padStart(2, '0'))
                       .join('');
-                    setRoomKey(hex);
+                    setChannelKey(hex);
                   }}
                   title="Generate random key"
                   aria-label="Generate random key"
@@ -299,7 +251,7 @@ export function NewMessageModal({
                   onChange={(e) => setPermitCapitals(e.target.checked)}
                   className="w-4 h-4 rounded border-input accent-primary"
                 />
-                <span className="text-sm">Permit capitals in room key derivation</span>
+                <span className="text-sm">Permit capitals in channel key derivation</span>
               </label>
               <p className="text-xs text-muted-foreground pl-7">
                 Not recommended; most companions normalize to lowercase
@@ -353,11 +305,9 @@ export function NewMessageModal({
               {loading ? 'Creating...' : 'Create & Add Another'}
             </Button>
           )}
-          {tab !== 'existing' && (
-            <Button onClick={handleCreate} disabled={loading}>
-              {loading ? 'Creating...' : 'Create'}
-            </Button>
-          )}
+          <Button onClick={handleCreate} disabled={loading}>
+            {loading ? 'Creating...' : 'Create'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

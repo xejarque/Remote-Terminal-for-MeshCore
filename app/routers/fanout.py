@@ -9,14 +9,14 @@ import string
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.config import settings as server_settings
 from app.fanout.bot_exec import _analyze_bot_signature
+from app.fanout.manager import fanout_manager
 from app.repository.fanout import FanoutConfigRepository
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/fanout", tags=["fanout"])
 
-_VALID_TYPES = {"mqtt_private", "mqtt_community", "bot", "webhook", "apprise", "sqs"}
+_VALID_TYPES = {"mqtt_private", "mqtt_community", "bot", "webhook", "apprise", "sqs", "map_upload"}
 
 _IATA_RE = re.compile(r"^[A-Z]{3}$")
 _DEFAULT_COMMUNITY_MQTT_TOPIC_TEMPLATE = "meshcore/{IATA}/{PUBLIC_KEY}/packets"
@@ -94,6 +94,8 @@ def _validate_and_normalize_config(config_type: str, config: dict) -> dict:
         _validate_apprise_config(normalized)
     elif config_type == "sqs":
         _validate_sqs_config(normalized)
+    elif config_type == "map_upload":
+        _validate_map_upload_config(normalized)
 
     return normalized
 
@@ -295,9 +297,32 @@ def _validate_sqs_config(config: dict) -> None:
         )
 
 
+def _validate_map_upload_config(config: dict) -> None:
+    """Validate and normalize map_upload config blob."""
+    api_url = str(config.get("api_url", "")).strip()
+    if api_url and not api_url.startswith(("http://", "https://")):
+        raise HTTPException(
+            status_code=400,
+            detail="api_url must start with http:// or https://",
+        )
+    # Persist the cleaned value (empty string means use the module default)
+    config["api_url"] = api_url
+    config["dry_run"] = bool(config.get("dry_run", True))
+    config["geofence_enabled"] = bool(config.get("geofence_enabled", False))
+    try:
+        radius = float(config.get("geofence_radius_km", 0) or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="geofence_radius_km must be a number") from None
+    if radius < 0:
+        raise HTTPException(status_code=400, detail="geofence_radius_km must be >= 0")
+    config["geofence_radius_km"] = radius
+
+
 def _enforce_scope(config_type: str, scope: dict) -> dict:
     """Enforce type-specific scope constraints. Returns normalized scope."""
     if config_type == "mqtt_community":
+        return {"messages": "none", "raw_packets": "all"}
+    if config_type == "map_upload":
         return {"messages": "none", "raw_packets": "all"}
     if config_type == "bot":
         return {"messages": "all", "raw_packets": "none"}
@@ -325,6 +350,15 @@ def _enforce_scope(config_type: str, scope: dict) -> dict:
     return {"messages": messages, "raw_packets": raw_packets}
 
 
+def _bot_system_disabled_detail() -> str | None:
+    source = fanout_manager.get_bots_disabled_source()
+    if source == "env":
+        return "Bot system disabled by server configuration (MESHCORE_DISABLE_BOTS)"
+    if source == "until_restart":
+        return "Bot system disabled until the server restarts"
+    return None
+
+
 @router.get("")
 async def list_fanout_configs() -> list[dict]:
     """List all fanout configs."""
@@ -340,8 +374,10 @@ async def create_fanout_config(body: FanoutConfigCreate) -> dict:
             detail=f"Invalid type '{body.type}'. Must be one of: {', '.join(sorted(_VALID_TYPES))}",
         )
 
-    if body.type == "bot" and server_settings.disable_bots:
-        raise HTTPException(status_code=403, detail="Bot system disabled by server configuration")
+    if body.type == "bot":
+        disabled_detail = _bot_system_disabled_detail()
+        if disabled_detail:
+            raise HTTPException(status_code=403, detail=disabled_detail)
 
     normalized_config = _validate_and_normalize_config(body.type, body.config)
     scope = _enforce_scope(body.type, body.scope)
@@ -356,8 +392,6 @@ async def create_fanout_config(body: FanoutConfigCreate) -> dict:
 
     # Start the module if enabled
     if cfg["enabled"]:
-        from app.fanout.manager import fanout_manager
-
         await fanout_manager.reload_config(cfg["id"])
 
     logger.info("Created fanout config %s (type=%s, name=%s)", cfg["id"], body.type, body.name)
@@ -371,8 +405,10 @@ async def update_fanout_config(config_id: str, body: FanoutConfigUpdate) -> dict
     if existing is None:
         raise HTTPException(status_code=404, detail="Fanout config not found")
 
-    if existing["type"] == "bot" and server_settings.disable_bots:
-        raise HTTPException(status_code=403, detail="Bot system disabled by server configuration")
+    if existing["type"] == "bot":
+        disabled_detail = _bot_system_disabled_detail()
+        if disabled_detail:
+            raise HTTPException(status_code=403, detail=disabled_detail)
 
     kwargs = {}
     if body.name is not None:
@@ -390,8 +426,6 @@ async def update_fanout_config(config_id: str, body: FanoutConfigUpdate) -> dict
         raise HTTPException(status_code=404, detail="Fanout config not found")
 
     # Reload the module to pick up changes
-    from app.fanout.manager import fanout_manager
-
     await fanout_manager.reload_config(config_id)
 
     logger.info("Updated fanout config %s", config_id)
@@ -406,10 +440,24 @@ async def delete_fanout_config(config_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Fanout config not found")
 
     # Stop the module first
-    from app.fanout.manager import fanout_manager
-
     await fanout_manager.remove_config(config_id)
     await FanoutConfigRepository.delete(config_id)
 
     logger.info("Deleted fanout config %s", config_id)
     return {"deleted": True}
+
+
+@router.post("/bots/disable-until-restart")
+async def disable_bots_until_restart() -> dict:
+    """Stop active bot modules and prevent them from running again until restart."""
+    source = await fanout_manager.disable_bots_until_restart()
+
+    from app.services.radio_runtime import radio_runtime as radio_manager
+    from app.websocket import broadcast_health
+
+    broadcast_health(radio_manager.is_connected, radio_manager.connection_info)
+    return {
+        "status": "ok",
+        "bots_disabled": True,
+        "bots_disabled_source": source,
+    }

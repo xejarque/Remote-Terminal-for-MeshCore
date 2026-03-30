@@ -29,9 +29,11 @@ interface PathModalProps {
   contacts: Contact[];
   config: RadioConfig | null;
   messageId?: number;
+  packetId?: number | null;
   isOutgoingChan?: boolean;
   isResendable?: boolean;
   onResend?: (messageId: number, newTimestamp?: boolean) => void;
+  onAnalyzePacket?: () => void;
 }
 
 export function PathModal({
@@ -42,14 +44,17 @@ export function PathModal({
   contacts,
   config,
   messageId,
+  packetId,
   isOutgoingChan,
   isResendable,
   onResend,
+  onAnalyzePacket,
 }: PathModalProps) {
   const { distanceUnit } = useDistanceUnit();
-  const [expandedMaps, setExpandedMaps] = useState<Set<number>>(new Set());
+  const [mapModalIndex, setMapModalIndex] = useState<number | null>(null);
   const hasResendActions = isOutgoingChan && messageId !== undefined && onResend;
   const hasPaths = paths.length > 0;
+  const showAnalyzePacket = hasPaths && packetId != null && onAnalyzePacket;
 
   // Resolve all paths
   const resolvedPaths = hasPaths
@@ -63,7 +68,7 @@ export function PathModal({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="max-w-md max-h-[80vh] flex flex-col">
+      <DialogContent className="max-w-md max-h-[80dvh] flex flex-col">
         <DialogHeader>
           <DialogTitle>
             {hasPaths
@@ -90,6 +95,12 @@ export function PathModal({
 
         {hasPaths && (
           <div className="flex-1 overflow-y-auto py-2 space-y-4">
+            {showAnalyzePacket ? (
+              <Button type="button" variant="outline" className="w-full" onClick={onAnalyzePacket}>
+                Analyze Packet
+              </Button>
+            ) : null}
+
             {/* Raw path summary */}
             <div className="text-sm">
               {paths.map((p, index) => {
@@ -130,59 +141,68 @@ export function PathModal({
                 </div>
               )}
 
-            {resolvedPaths.map((pathData, index) => {
-              const mapExpanded = expandedMaps.has(index);
-              const toggleMap = () =>
-                setExpandedMaps((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(index)) next.delete(index);
-                  else next.add(index);
-                  return next;
-                });
-
-              return (
-                <div key={index}>
-                  <div className="flex items-center justify-between mb-2 pb-1 border-b border-border">
-                    {!hasSinglePath ? (
-                      <div className="text-sm text-foreground/70 font-semibold">
-                        Path {index + 1}{' '}
-                        <span className="font-normal text-muted-foreground">
-                          — received {formatTime(pathData.received_at)}
-                        </span>
-                      </div>
-                    ) : (
-                      <div />
-                    )}
-                    <button
-                      onClick={toggleMap}
-                      aria-expanded={mapExpanded}
-                      className="text-xs text-primary hover:underline cursor-pointer shrink-0 ml-2"
-                    >
-                      {mapExpanded ? 'Hide map' : 'Map route'}
-                    </button>
-                  </div>
-                  {mapExpanded && (
-                    <div className="mb-2">
-                      <Suspense
-                        fallback={
-                          <div
-                            className="rounded border border-border bg-muted/30 animate-pulse"
-                            style={{ height: 220 }}
-                          />
-                        }
-                      >
-                        <PathRouteMap resolved={pathData.resolved} senderInfo={senderInfo} />
-                      </Suspense>
+            {resolvedPaths.map((pathData, index) => (
+              <div key={index}>
+                <div className="flex items-center justify-between mb-2 pb-1 border-b border-border">
+                  {!hasSinglePath ? (
+                    <div className="text-sm text-foreground/70 font-semibold">
+                      Path {index + 1}{' '}
+                      <span className="font-normal text-muted-foreground">
+                        — received {formatTime(pathData.received_at)}
+                      </span>
                     </div>
+                  ) : (
+                    <div />
                   )}
-                  <PathVisualization
-                    resolved={pathData.resolved}
-                    senderInfo={senderInfo}
-                    distanceUnit={distanceUnit}
-                  />
+                  <button
+                    onClick={() => setMapModalIndex(index)}
+                    className="text-xs text-primary hover:underline cursor-pointer shrink-0 ml-2"
+                  >
+                    Map route
+                  </button>
                 </div>
-              );
-            })}
+                <PathVisualization
+                  resolved={pathData.resolved}
+                  senderInfo={senderInfo}
+                  distanceUnit={distanceUnit}
+                />
+              </div>
+            ))}
+
+            {/* Map modal — opens when a "Map route" button is clicked */}
+            <Dialog
+              open={mapModalIndex !== null}
+              onOpenChange={(open) => !open && setMapModalIndex(null)}
+            >
+              <DialogContent className="sm:max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>
+                    {mapModalIndex !== null && !hasSinglePath
+                      ? `Path ${mapModalIndex + 1} Route Map`
+                      : 'Route Map'}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Map of known node locations along this message route.
+                  </DialogDescription>
+                </DialogHeader>
+                {mapModalIndex !== null && (
+                  <Suspense
+                    fallback={
+                      <div
+                        className="rounded border border-border bg-muted/30 animate-pulse"
+                        style={{ height: 400 }}
+                      />
+                    }
+                  >
+                    <PathRouteMap
+                      resolved={resolvedPaths[mapModalIndex].resolved}
+                      senderInfo={senderInfo}
+                      height={400}
+                    />
+                  </Suspense>
+                )}
+              </DialogContent>
+            </Dialog>
           </div>
         )}
 

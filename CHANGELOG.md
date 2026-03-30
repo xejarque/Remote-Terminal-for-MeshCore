@@ -1,3 +1,36 @@
+## [3.6.2] - 2026-03-29
+
+Feature: Be more flexible about timing and volume of full contact offload
+Feature: Improve room server and repeater ops to be much more clearer about auth status
+Feature: Show last error status on integrations
+Feature: Push multi-platform docker builds
+Bugfix: Fix advert interval time unit display
+Bugfix: Don't cast RSSI/SNR to string for community MQTT
+Bugfix: Map uploader follows redirect
+Misc: Thin out unnecessary cruft in unreads endpoint
+Misc: Fall back gracefully if linked to an unknown contact
+
+## [3.6.1] - 2026-03-26
+
+Feature: MeshCore Map integration
+Feature: Add warning screen about bots
+Feature: Favicon reflects unread message state
+Feature: Show hop map in larger modal
+Feature: Add prebuilt frontend install script
+Feature: Add clean service installer script
+Feature: Swipe in to show menu
+Bugfix: Invalid backend API path serves error, not fallback index
+Bugfix: Fix some spacing/page height issues
+Misc: Misc. bugfixes and performance and test improvements
+
+## [3.6.0] - 2026-03-22
+
+Feature: Add incoming-packet analytics
+Feature: BYOPacket for analysis
+Feature: Add room activity to stats view
+Bugfix: Handle Heltec v3 serial noise
+Misc: Swap repeaters and room servers for better ordering
+
 ## [3.5.0] - 2026-03-19
 
 Feature: Add room server alpha support

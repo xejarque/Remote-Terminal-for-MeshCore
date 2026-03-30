@@ -331,6 +331,12 @@ class MessageRepository:
     @staticmethod
     def _row_to_message(row: Any) -> Message:
         """Convert a database row to a Message model."""
+        packet_id = None
+        if hasattr(row, "keys"):
+            row_keys = row.keys()
+            if "packet_id" in row_keys:
+                packet_id = row["packet_id"]
+
         return Message(
             id=row["id"],
             type=row["type"],
@@ -345,6 +351,14 @@ class MessageRepository:
             outgoing=bool(row["outgoing"]),
             acked=row["acked"],
             sender_name=row["sender_name"],
+            packet_id=packet_id,
+        )
+
+    @staticmethod
+    def _message_select(message_alias: str = "messages") -> str:
+        return (
+            f"{message_alias}.*, "
+            f"(SELECT MIN(id) FROM raw_packets WHERE message_id = {message_alias}.id) AS packet_id"
         )
 
     @staticmethod
@@ -363,7 +377,7 @@ class MessageRepository:
     ) -> list[Message]:
         search_query = MessageRepository._parse_search_query(q) if q else None
         query = (
-            "SELECT messages.* FROM messages "
+            f"SELECT {MessageRepository._message_select('messages')} FROM messages "
             "LEFT JOIN contacts ON messages.type = 'PRIV' "
             "AND LOWER(messages.conversation_key) = LOWER(contacts.public_key) "
             "LEFT JOIN channels ON messages.type = 'CHAN' "
@@ -470,7 +484,8 @@ class MessageRepository:
 
         # 1. Get the target message (must satisfy filters if provided)
         target_cursor = await db.conn.execute(
-            f"SELECT * FROM messages WHERE id = ? AND {where_sql}",
+            f"SELECT {MessageRepository._message_select('messages')} "
+            f"FROM messages WHERE id = ? AND {where_sql}",
             (message_id, *base_params),
         )
         target_row = await target_cursor.fetchone()
@@ -481,7 +496,7 @@ class MessageRepository:
 
         # 2. Get context_size+1 messages before target (DESC)
         before_query = f"""
-            SELECT * FROM messages WHERE {where_sql}
+            SELECT {MessageRepository._message_select("messages")} FROM messages WHERE {where_sql}
             AND (received_at < ? OR (received_at = ? AND id < ?))
             ORDER BY received_at DESC, id DESC LIMIT ?
         """
@@ -500,7 +515,7 @@ class MessageRepository:
 
         # 3. Get context_size+1 messages after target (ASC)
         after_query = f"""
-            SELECT * FROM messages WHERE {where_sql}
+            SELECT {MessageRepository._message_select("messages")} FROM messages WHERE {where_sql}
             AND (received_at > ? OR (received_at = ? AND id > ?))
             ORDER BY received_at ASC, id ASC LIMIT ?
         """
@@ -545,7 +560,7 @@ class MessageRepository:
     async def get_by_id(message_id: int) -> "Message | None":
         """Look up a message by its ID."""
         cursor = await db.conn.execute(
-            "SELECT * FROM messages WHERE id = ?",
+            f"SELECT {MessageRepository._message_select('messages')} FROM messages WHERE id = ?",
             (message_id,),
         )
         row = await cursor.fetchone()
@@ -570,7 +585,9 @@ class MessageRepository:
     ) -> "Message | None":
         """Look up a message by its unique content fields."""
         query = """
-            SELECT * FROM messages
+            SELECT messages.*,
+                   (SELECT MIN(id) FROM raw_packets WHERE message_id = messages.id) AS packet_id
+            FROM messages
             WHERE type = ? AND conversation_key = ? AND text = ?
               AND (sender_timestamp = ? OR (sender_timestamp IS NULL AND ? IS NULL))
         """
@@ -705,6 +722,11 @@ class MessageRepository:
             prefix = "channel" if row["type"] == "CHAN" else "contact"
             state_key = f"{prefix}-{row['conversation_key']}"
             last_message_times[state_key] = row["last_message_time"]
+
+        # Only include last_read_ats for conversations that actually have messages.
+        # Without this filter, every contact heard via advertisement (even without
+        # any DMs) bloats the payload — 391KB down to ~46KB on a typical database.
+        last_read_ats = {k: v for k, v in last_read_ats.items() if k in last_message_times}
 
         return {
             "counts": counts,

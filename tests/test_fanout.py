@@ -271,6 +271,35 @@ class TestFanoutManagerDispatch:
         assert statuses["test-id"]["name"] == "Test"
         assert statuses["test-id"]["type"] == "mqtt_private"
 
+    def test_get_statuses_includes_last_error(self):
+        manager = FanoutManager()
+        mod = StubModule()
+        mod._status = "error"
+        mod._last_error = "HTTP 500"
+        manager._modules["test-id"] = (mod, {})
+
+        with patch(
+            "app.repository.fanout._configs_cache",
+            {"test-id": {"name": "Test", "type": "webhook", "enabled": True}},
+        ):
+            statuses = manager.get_statuses()
+
+        assert statuses["test-id"]["status"] == "error"
+        assert statuses["test-id"]["last_error"] == "HTTP 500"
+
+    def test_get_statuses_includes_start_failure_error(self):
+        manager = FanoutManager()
+        manager._module_errors["test-id"] = "ConnectionError: broker down"
+
+        with patch(
+            "app.repository.fanout._configs_cache",
+            {"test-id": {"name": "Test", "type": "mqtt_private", "enabled": True}},
+        ):
+            statuses = manager.get_statuses()
+
+        assert statuses["test-id"]["status"] == "error"
+        assert statuses["test-id"]["last_error"] == "ConnectionError: broker down"
+
 
 # ---------------------------------------------------------------------------
 # Repository tests
@@ -706,6 +735,98 @@ class TestSqsValidation:
         _validate_sqs_config(
             {"queue_url": "https://sqs.us-east-1.amazonaws.com/123456789012/mesh-events"}
         )
+
+
+class TestMapUploadValidation:
+    def test_rejects_bad_api_url_scheme(self):
+        from fastapi import HTTPException
+
+        from app.routers.fanout import _validate_map_upload_config
+
+        with pytest.raises(HTTPException) as exc_info:
+            _validate_map_upload_config({"api_url": "ftp://example.com"})
+        assert exc_info.value.status_code == 400
+        assert "api_url" in exc_info.value.detail
+
+    def test_accepts_empty_api_url(self):
+        from app.routers.fanout import _validate_map_upload_config
+
+        config = {"api_url": ""}
+        _validate_map_upload_config(config)
+        assert config["api_url"] == ""
+
+    def test_accepts_valid_api_url(self):
+        from app.routers.fanout import _validate_map_upload_config
+
+        config = {"api_url": "https://custom.example.com/upload"}
+        _validate_map_upload_config(config)
+        assert config["api_url"] == "https://custom.example.com/upload"
+
+    def test_normalizes_dry_run_to_bool(self):
+        from app.routers.fanout import _validate_map_upload_config
+
+        config = {"dry_run": 1}
+        _validate_map_upload_config(config)
+        assert config["dry_run"] is True
+
+    def test_normalizes_geofence_enabled_to_bool(self):
+        from app.routers.fanout import _validate_map_upload_config
+
+        config = {"geofence_enabled": 1}
+        _validate_map_upload_config(config)
+        assert config["geofence_enabled"] is True
+
+    def test_normalizes_geofence_radius_to_float(self):
+        from app.routers.fanout import _validate_map_upload_config
+
+        config = {"geofence_radius_km": 100}
+        _validate_map_upload_config(config)
+        assert config["geofence_radius_km"] == 100.0
+        assert isinstance(config["geofence_radius_km"], float)
+
+    def test_rejects_negative_geofence_radius(self):
+        from fastapi import HTTPException
+
+        from app.routers.fanout import _validate_map_upload_config
+
+        with pytest.raises(HTTPException) as exc_info:
+            _validate_map_upload_config({"geofence_radius_km": -1})
+        assert exc_info.value.status_code == 400
+        assert "geofence_radius_km" in exc_info.value.detail
+
+    def test_rejects_non_numeric_geofence_radius(self):
+        from fastapi import HTTPException
+
+        from app.routers.fanout import _validate_map_upload_config
+
+        with pytest.raises(HTTPException) as exc_info:
+            _validate_map_upload_config({"geofence_radius_km": "bad"})
+        assert exc_info.value.status_code == 400
+        assert "geofence_radius_km" in exc_info.value.detail
+
+    def test_accepts_zero_geofence_radius(self):
+        from app.routers.fanout import _validate_map_upload_config
+
+        config = {"geofence_radius_km": 0}
+        _validate_map_upload_config(config)
+        assert config["geofence_radius_km"] == 0.0
+
+    def test_defaults_applied_when_keys_absent(self):
+        from app.routers.fanout import _validate_map_upload_config
+
+        config = {}
+        _validate_map_upload_config(config)
+        assert config["api_url"] == ""
+        assert config["dry_run"] is True
+        assert config["geofence_enabled"] is False
+        assert config["geofence_radius_km"] == 0.0
+
+    def test_enforce_scope_map_upload_forces_raw_only(self):
+        """map_upload scope is always fixed regardless of what the caller passes."""
+        from app.routers.fanout import _enforce_scope
+
+        scope = _enforce_scope("map_upload", {"messages": "all", "raw_packets": "none"})
+        assert scope == {"messages": "none", "raw_packets": "all"}
 
     def test_enforce_scope_sqs_preserves_raw_packets_setting(self):
         from app.routers.fanout import _enforce_scope

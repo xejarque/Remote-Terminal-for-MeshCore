@@ -53,6 +53,7 @@ export interface FanoutStatusEntry {
   name: string;
   type: string;
   status: string;
+  last_error?: string | null;
 }
 
 export interface AppInfo {
@@ -78,6 +79,8 @@ export interface HealthStatus {
   oldest_undecrypted_timestamp: number | null;
   fanout_statuses: Record<string, FanoutStatusEntry>;
   bots_disabled: boolean;
+  bots_disabled_source?: 'env' | 'until_restart' | null;
+  basic_auth_enabled?: boolean;
 }
 
 export interface FanoutConfig {
@@ -267,6 +270,7 @@ export interface Message {
   acked: number;
   sender_name: string | null;
   channel_name?: string | null;
+  packet_id?: number | null;
 }
 
 export interface MessagesAroundResponse {
@@ -525,6 +529,7 @@ export interface StatisticsResponse {
   total_outgoing: number;
   contacts_heard: ContactActivityCounts;
   repeaters_heard: ContactActivityCounts;
+  known_channels_active: ContactActivityCounts;
   path_hash_width_24h: {
     total_packets: number;
     single_byte: number;

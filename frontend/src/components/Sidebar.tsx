@@ -748,7 +748,7 @@ export function Sidebar({
           icon: <LockOpen className="h-4 w-4" />,
           label: (
             <>
-              {showCracker ? 'Hide' : 'Show'} Room Finder
+              {showCracker ? 'Hide' : 'Show'} Channel Finder
               <span
                 className={cn(
                   'ml-1 text-[11px]',
@@ -844,7 +844,7 @@ export function Sidebar({
         <div className="relative min-w-0 flex-1">
           <Input
             type="text"
-            placeholder="Search rooms/contacts..."
+            placeholder="Search channels/contacts..."
             aria-label="Search conversations"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -945,21 +945,6 @@ export function Sidebar({
           </>
         )}
 
-        {/* Room Servers */}
-        {nonFavoriteRooms.length > 0 && (
-          <>
-            {renderSectionHeader(
-              'Room Servers',
-              roomsCollapsed,
-              () => setRoomsCollapsed((prev) => !prev),
-              'rooms',
-              roomsUnreadCount,
-              roomsUnreadCount > 0
-            )}
-            {(isSearching || !roomsCollapsed) && roomRows.map((row) => renderConversationRow(row))}
-          </>
-        )}
-
         {/* Repeaters */}
         {nonFavoriteRepeaters.length > 0 && (
           <>
@@ -972,6 +957,21 @@ export function Sidebar({
             )}
             {(isSearching || !repeatersCollapsed) &&
               repeaterRows.map((row) => renderConversationRow(row))}
+          </>
+        )}
+
+        {/* Room Servers */}
+        {nonFavoriteRooms.length > 0 && (
+          <>
+            {renderSectionHeader(
+              'Room Servers',
+              roomsCollapsed,
+              () => setRoomsCollapsed((prev) => !prev),
+              'rooms',
+              roomsUnreadCount,
+              roomsUnreadCount > 0
+            )}
+            {(isSearching || !roomsCollapsed) && roomRows.map((row) => renderConversationRow(row))}
           </>
         )}
 

@@ -15,6 +15,7 @@ import type {
   MessagesAroundResponse,
   MigratePreferencesRequest,
   MigratePreferencesResponse,
+  RawPacket,
   RadioAdvertMode,
   RadioConfig,
   RadioConfigUpdate,
@@ -248,6 +249,7 @@ export const api = {
     ),
 
   // Packets
+  getPacket: (packetId: number) => fetchJson<RawPacket>(`/packets/${packetId}`),
   getUndecryptedPacketCount: () => fetchJson<{ count: number }>('/packets/undecrypted/count'),
   decryptHistoricalPackets: (params: {
     key_type: 'channel' | 'contact';
@@ -346,6 +348,14 @@ export const api = {
   deleteFanoutConfig: (id: string) =>
     fetchJson<{ deleted: boolean }>(`/fanout/${id}`, {
       method: 'DELETE',
+    }),
+  disableBotsUntilRestart: () =>
+    fetchJson<{
+      status: string;
+      bots_disabled: boolean;
+      bots_disabled_source: 'env' | 'until_restart';
+    }>('/fanout/bots/disable-until-restart', {
+      method: 'POST',
     }),
 
   // Statistics
