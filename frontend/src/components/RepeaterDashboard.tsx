@@ -291,6 +291,7 @@ export function RepeaterDashboard({
                   publicKey={conversation.id}
                   isTracked={telemetryTracked}
                   onToggleTracking={handleToggleTelemetryTracking}
+                  statusFetchedAt={paneStates.status.fetched_at}
                 />
                 <RadioSettingsPane
                   data={paneData.radioSettings}
