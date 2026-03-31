@@ -20,7 +20,7 @@ from meshcore import EventType, MeshCore
 
 from app.channel_constants import PUBLIC_CHANNEL_KEY, PUBLIC_CHANNEL_NAME
 from app.config import settings
-from app.event_handlers import cleanup_expired_acks
+from app.event_handlers import cleanup_expired_acks, on_contact_message
 from app.models import Contact, ContactUpsert
 from app.radio import RadioOperationBusyError
 from app.repository import (
@@ -388,6 +388,14 @@ async def _resolve_channel_for_pending_message(
     return cached_key, channel.name if channel else None
 
 
+async def _store_pending_direct_message(event) -> None:
+    """Route a CONTACT_MSG_RECV event pulled via get_msg() through the DM ingest path."""
+    try:
+        await on_contact_message(event)
+    except Exception:
+        logger.warning("Failed to store pending direct message", exc_info=True)
+
+
 async def _store_pending_channel_message(mc: MeshCore, payload: dict) -> None:
     """Persist a CHANNEL_MSG_RECV event pulled via get_msg()."""
     channel_idx = payload.get("channel_idx")
@@ -412,7 +420,8 @@ async def _store_pending_channel_message(mc: MeshCore, payload: dict) -> None:
         return
 
     received_at = int(time.time())
-    sender_timestamp = payload.get("sender_timestamp") or received_at
+    ts = payload.get("sender_timestamp")
+    sender_timestamp = ts if ts is not None else received_at
     sender_name, message_text = _split_channel_sender_and_text(payload.get("text", ""))
 
     await create_fallback_channel_message(
@@ -497,6 +506,8 @@ async def drain_pending_messages(mc: MeshCore) -> int:
             elif result.type in (EventType.CONTACT_MSG_RECV, EventType.CHANNEL_MSG_RECV):
                 if result.type == EventType.CHANNEL_MSG_RECV:
                     await _store_pending_channel_message(mc, result.payload)
+                elif result.type == EventType.CONTACT_MSG_RECV:
+                    await _store_pending_direct_message(result)
                 count += 1
 
             # Small delay between fetches
@@ -534,6 +545,8 @@ async def poll_for_messages(mc: MeshCore) -> int:
         elif result.type in (EventType.CONTACT_MSG_RECV, EventType.CHANNEL_MSG_RECV):
             if result.type == EventType.CHANNEL_MSG_RECV:
                 await _store_pending_channel_message(mc, result.payload)
+            elif result.type == EventType.CONTACT_MSG_RECV:
+                await _store_pending_direct_message(result)
             count += 1
             # If we got a message, there might be more - drain them
             count += await drain_pending_messages(mc)
@@ -1119,6 +1132,7 @@ _last_contact_sync: float = 0.0
 CONTACT_SYNC_THROTTLE_SECONDS = 30  # Don't sync more than once per 30 seconds
 CONTACT_RECONCILE_BATCH_SIZE = 2
 CONTACT_RECONCILE_YIELD_SECONDS = 0.05
+CONTACT_RECONCILE_BUSY_BACKOFF_SECONDS = 2.0
 
 
 def _evict_removed_contact_from_library_cache(mc: MeshCore, public_key: str) -> None:
@@ -1328,6 +1342,8 @@ async def _reconcile_radio_contacts_in_background(
                                 )
             except RadioOperationBusyError:
                 logger.debug("Background contact reconcile yielding: radio busy")
+                await asyncio.sleep(CONTACT_RECONCILE_BUSY_BACKOFF_SECONDS)
+                continue
 
             await asyncio.sleep(CONTACT_RECONCILE_YIELD_SECONDS)
             if not progressed:

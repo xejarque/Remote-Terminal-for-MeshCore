@@ -34,6 +34,7 @@ export type RadioDiscoveryTarget = 'repeaters' | 'sensors' | 'all';
 
 export interface RadioDiscoveryResult {
   public_key: string;
+  name: string | null;
   node_type: 'repeater' | 'sensor';
   heard_count: number;
   local_snr: number | null;
@@ -285,7 +286,7 @@ export interface ResendChannelMessageResponse {
   message?: Message;
 }
 
-type ConversationType = 'contact' | 'channel' | 'raw' | 'map' | 'visualizer' | 'search';
+type ConversationType = 'contact' | 'channel' | 'raw' | 'map' | 'visualizer' | 'search' | 'trace';
 
 export interface Conversation {
   type: ConversationType;
@@ -485,6 +486,25 @@ export interface TraceResponse {
   path_len: number;
 }
 
+export interface RadioTraceNode {
+  role: 'repeater' | 'custom' | 'local';
+  public_key: string | null;
+  name: string | null;
+  observed_hash: string | null;
+  snr: number | null;
+}
+
+export interface RadioTraceHopRequest {
+  public_key?: string | null;
+  hop_hex?: string | null;
+}
+
+export interface RadioTraceResponse {
+  path_len: number;
+  timeout_seconds: number;
+  nodes: RadioTraceNode[];
+}
+
 export interface PathDiscoveryRoute {
   path: string;
   path_len: number;
@@ -516,6 +536,20 @@ interface ContactActivityCounts {
   last_week: number;
 }
 
+export interface NoiseFloorSample {
+  timestamp: number;
+  noise_floor_dbm: number;
+}
+
+export interface NoiseFloorHistoryStats {
+  sample_interval_seconds: number;
+  coverage_seconds: number;
+  latest_noise_floor_dbm: number | null;
+  latest_timestamp: number | null;
+  supported: boolean | null;
+  samples: NoiseFloorSample[];
+}
+
 export interface StatisticsResponse {
   busiest_channels_24h: BusyChannel[];
   contact_count: number;
@@ -539,4 +573,5 @@ export interface StatisticsResponse {
     double_byte_pct: number;
     triple_byte_pct: number;
   };
+  noise_floor_24h: NoiseFloorHistoryStats;
 }

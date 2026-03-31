@@ -628,6 +628,59 @@ class TraceResponse(BaseModel):
     path_len: int = Field(description="Number of hops in the trace path")
 
 
+class RadioTraceHopRequest(BaseModel):
+    """One requested hop in a radio trace path."""
+
+    public_key: str | None = Field(
+        default=None,
+        description="Full repeater public key when this hop maps to a known repeater",
+    )
+    hop_hex: str | None = Field(
+        default=None,
+        description="Raw hop hash hex when using a custom repeater prefix",
+    )
+
+
+class RadioTraceRequest(BaseModel):
+    """Ordered trace path for a radio trace loop."""
+
+    hop_hash_bytes: Literal[1, 2, 4] = Field(
+        default=4,
+        description="Hash width in bytes for every hop in this trace path",
+    )
+    hops: list[RadioTraceHopRequest] = Field(
+        min_length=1,
+        description="Ordered repeater hops, using either known repeater keys or custom hop hex",
+    )
+
+
+class RadioTraceNode(BaseModel):
+    """One resolved node in a radio trace result."""
+
+    role: Literal["repeater", "custom", "local"] = Field(description="Node role in the trace")
+    public_key: str | None = Field(
+        default=None,
+        description="Resolved full public key for this node when known",
+    )
+    name: str | None = Field(default=None, description="Display name for this node when known")
+    observed_hash: str | None = Field(
+        default=None,
+        description="Observed 4-byte trace hash for this node as hex",
+    )
+    snr: float | None = Field(default=None, description="Reported SNR for this node in dB")
+
+
+class RadioTraceResponse(BaseModel):
+    """Resolved multi-hop radio trace result."""
+
+    path_len: int = Field(description="Number of hashed nodes returned by the trace response")
+    timeout_seconds: float = Field(description="Timeout window used while waiting for the trace")
+    nodes: list[RadioTraceNode] = Field(
+        default_factory=list,
+        description="Ordered trace nodes: repeater hops followed by the terminal local radio",
+    )
+
+
 class PathDiscoveryRoute(BaseModel):
     """One resolved route returned by contact path discovery."""
 
@@ -681,6 +734,10 @@ class RadioDiscoveryResult(BaseModel):
     """One mesh node heard during a discovery sweep."""
 
     public_key: str = Field(description="Discovered node public key as hex")
+    name: str | None = Field(
+        default=None,
+        description="Known name for this node from contacts DB, if any",
+    )
     node_type: Literal["repeater", "sensor"] = Field(description="Discovered node class")
     heard_count: int = Field(default=1, description="How many responses were heard from this node")
     local_snr: float | None = Field(
@@ -824,6 +881,27 @@ class PathHashWidthStats(BaseModel):
     triple_byte_pct: float
 
 
+class NoiseFloorSample(BaseModel):
+    timestamp: int = Field(description="Unix timestamp of the sampled reading")
+    noise_floor_dbm: int = Field(description="Noise floor in dBm")
+
+
+class NoiseFloorHistoryStats(BaseModel):
+    sample_interval_seconds: int = Field(description="Expected spacing between samples")
+    coverage_seconds: int = Field(description="How much of the last 24 hours is represented")
+    latest_noise_floor_dbm: int | None = Field(
+        default=None, description="Most recent sampled noise floor in dBm"
+    )
+    latest_timestamp: int | None = Field(
+        default=None, description="Unix timestamp of the most recent sample"
+    )
+    supported: bool | None = Field(
+        default=None,
+        description="Whether the connected radio appears to support radio stats sampling",
+    )
+    samples: list[NoiseFloorSample] = Field(default_factory=list)
+
+
 class StatisticsResponse(BaseModel):
     busiest_channels_24h: list[BusyChannel]
     contact_count: int
@@ -839,6 +917,7 @@ class StatisticsResponse(BaseModel):
     repeaters_heard: ContactActivityCounts
     known_channels_active: ContactActivityCounts
     path_hash_width_24h: PathHashWidthStats
+    noise_floor_24h: NoiseFloorHistoryStats
 
 
 class TelemetryHistoryEntry(BaseModel):

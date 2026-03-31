@@ -2,6 +2,8 @@
 __pycache__/
 *.py[oc]
 build/
+!scripts/build/
+!scripts/build/**
 wheels/
 *.egg-info
 
@@ -23,3 +25,8 @@ references/
 
 # ancillary LLM files
 .claude/
+
+# local Docker compose files
+docker-compose.yml
+docker-compose.yaml
+.docker-certs/

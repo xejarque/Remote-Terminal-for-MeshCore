@@ -48,7 +48,7 @@ Run both the backend and `npm run dev` for hot-reloading frontend development.
 Run the full quality suite before proposing or handing off code changes:
 
 ```bash
-./scripts/all_quality.sh
+./scripts/quality/all_quality.sh
 ```
 
 That runs linting, formatting, type checking, tests, and builds for both backend and frontend.
@@ -78,6 +78,7 @@ These tests are only guaranteed to run correctly in a narrow subset of environme
 
 ```bash
 cd tests/e2e
+npm install
 npx playwright test # headless
 npx playwright test --headed # you can probably guess
 ```

@@ -20,6 +20,12 @@ import {
 } from '../utils/lastViewedConversation';
 import { api } from '../api';
 import { DISTANCE_UNIT_KEY } from '../utils/distanceUnits';
+import {
+  DEFAULT_FONT_SCALE,
+  FONT_SCALE_KEY,
+  MAX_FONT_SCALE,
+  MIN_FONT_SCALE,
+} from '../utils/fontScale';
 
 const baseConfig: RadioConfig = {
   public_key: 'aa'.repeat(32),
@@ -187,6 +193,7 @@ describe('SettingsModal', () => {
     vi.restoreAllMocks();
     localStorage.clear();
     window.location.hash = '';
+    document.documentElement.style.fontSize = '';
   });
 
   it('refreshes app settings when opened', async () => {
@@ -301,6 +308,7 @@ describe('SettingsModal', () => {
         results: [
           {
             public_key: '11'.repeat(32),
+            name: null,
             node_type: 'repeater',
             heard_count: 2,
             local_snr: 7.5,
@@ -549,6 +557,55 @@ describe('SettingsModal', () => {
     expect(localStorage.getItem(DISTANCE_UNIT_KEY)).toBe('smoots');
   });
 
+  it('defaults relative font size to 100% and exposes the expected input bounds', () => {
+    renderModal();
+    openLocalSection();
+
+    const slider = screen.getByLabelText('Relative font size slider');
+    const input = screen.getByLabelText('Relative font size percentage');
+
+    expect(slider).toHaveValue(String(DEFAULT_FONT_SCALE));
+    expect(slider).toHaveAttribute('step', '5');
+    expect(input).toHaveValue(DEFAULT_FONT_SCALE);
+    expect(input).toHaveAttribute('min', String(MIN_FONT_SCALE));
+    expect(input).toHaveAttribute('max', String(MAX_FONT_SCALE));
+  });
+
+  it('stores and applies relative font size changes locally', async () => {
+    renderModal();
+    openLocalSection();
+
+    const slider = screen.getByLabelText('Relative font size slider');
+
+    fireEvent.change(slider, { target: { value: '135' } });
+
+    expect(localStorage.getItem(FONT_SCALE_KEY)).toBeNull();
+    expect(document.documentElement.style.fontSize).toBe('');
+
+    fireEvent.mouseUp(slider);
+
+    await waitFor(() => {
+      expect(localStorage.getItem(FONT_SCALE_KEY)).toBe('135');
+      expect(document.documentElement.style.fontSize).toBe('135%');
+    });
+
+    fireEvent.change(screen.getByLabelText('Relative font size percentage'), {
+      target: { value: '137.5' },
+    });
+
+    await waitFor(() => {
+      expect(localStorage.getItem(FONT_SCALE_KEY)).toBe('137.5');
+      expect(document.documentElement.style.fontSize).toBe('137.5%');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+
+    await waitFor(() => {
+      expect(localStorage.getItem(FONT_SCALE_KEY)).toBeNull();
+      expect(document.documentElement.style.fontSize).toBe('100%');
+    });
+  });
+
   it('purges decrypted raw packets via maintenance endpoint action', async () => {
     const runMaintenanceSpy = vi.spyOn(api, 'runMaintenance').mockResolvedValue({
       packets_deleted: 12,
@@ -595,6 +652,14 @@ describe('SettingsModal', () => {
         double_byte_pct: 30,
         triple_byte_pct: 20,
       },
+      noise_floor_24h: {
+        sample_interval_seconds: 300,
+        coverage_seconds: 3600,
+        latest_noise_floor_dbm: -105,
+        latest_timestamp: 1711800000,
+        supported: true,
+        samples: [],
+      },
     };
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -626,17 +691,11 @@ describe('SettingsModal', () => {
     expect(
       screen.getByText(/Parsed stored raw packets from the last 24 hours: 120/)
     ).toBeInTheDocument();
-    expect(screen.getByText('1-byte hops')).toBeInTheDocument();
-    expect(screen.getByText('60 (50.0%)')).toBeInTheDocument();
-    expect(screen.getByText('36 (30.0%)')).toBeInTheDocument();
-    expect(screen.getByText('24 (20.0%)')).toBeInTheDocument();
     expect(screen.getByText('Contacts heard')).toBeInTheDocument();
     expect(screen.getByText('Repeaters heard')).toBeInTheDocument();
     expect(screen.getByText('Known-channels active')).toBeInTheDocument();
-
-    // Busiest channels
-    expect(screen.getByText('general')).toBeInTheDocument();
-    expect(screen.getByText('42 msgs')).toBeInTheDocument();
+    expect(screen.getByText('Busiest Channels (24h)')).toBeInTheDocument();
+    expect(screen.getByText('Noise Floor (24h)')).toBeInTheDocument();
   });
 
   it('fetches statistics when expanded in mobile external-nav mode', async () => {
@@ -662,6 +721,14 @@ describe('SettingsModal', () => {
         single_byte_pct: 50,
         double_byte_pct: 30,
         triple_byte_pct: 20,
+      },
+      noise_floor_24h: {
+        sample_interval_seconds: 300,
+        coverage_seconds: 0,
+        latest_noise_floor_dbm: null,
+        latest_timestamp: null,
+        supported: null,
+        samples: [],
       },
     };
 

@@ -360,11 +360,18 @@ async def run_migrations(conn: aiosqlite.Connection) -> int:
         await set_version(conn, 46)
         applied += 1
 
-    # Migration 47: Repeater telemetry history table + tracking opt-in column
+    # Migration 47: Add statistics indexes for time-windowed scans
     if version < 47:
-        logger.info("Applying migration 47: repeater telemetry history")
-        await _migrate_047_repeater_telemetry_history(conn)
+        logger.info("Applying migration 47: add statistics indexes")
+        await _migrate_047_add_statistics_indexes(conn)
         await set_version(conn, 47)
+        applied += 1
+
+    # Migration 48: Repeater telemetry history table + tracking opt-in column
+    if version < 48:
+        logger.info("Applying migration 48: repeater telemetry history")
+        await _migrate_048_repeater_telemetry_history(conn)
+        await set_version(conn, 48)
         applied += 1
 
     if applied > 0:
@@ -2877,7 +2884,41 @@ async def _migrate_046_cleanup_orphaned_contact_child_rows(conn: aiosqlite.Conne
     await conn.commit()
 
 
-async def _migrate_047_repeater_telemetry_history(conn: aiosqlite.Connection) -> None:
+async def _migrate_047_add_statistics_indexes(conn: aiosqlite.Connection) -> None:
+    """Add indexes used by the statistics endpoint's time-windowed scans."""
+    cursor = await conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    tables = {row[0] for row in await cursor.fetchall()}
+
+    if "raw_packets" in tables:
+        cursor = await conn.execute("PRAGMA table_info(raw_packets)")
+        raw_packet_columns = {row[1] for row in await cursor.fetchall()}
+        if "timestamp" in raw_packet_columns:
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_raw_packets_timestamp ON raw_packets(timestamp)"
+            )
+
+    if "contacts" in tables:
+        cursor = await conn.execute("PRAGMA table_info(contacts)")
+        contact_columns = {row[1] for row in await cursor.fetchall()}
+        if {"type", "last_seen"}.issubset(contact_columns):
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_contacts_type_last_seen ON contacts(type, last_seen)"
+            )
+
+    if "messages" in tables:
+        cursor = await conn.execute("PRAGMA table_info(messages)")
+        message_columns = {row[1] for row in await cursor.fetchall()}
+        if {"type", "received_at", "conversation_key"}.issubset(message_columns):
+            await conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_messages_type_received_conversation
+                ON messages(type, received_at, conversation_key)
+                """
+            )
+    await conn.commit()
+
+
+async def _migrate_048_repeater_telemetry_history(conn: aiosqlite.Connection) -> None:
     """Create repeater_telemetry_history table and add tracking opt-in column to app_settings."""
     await conn.execute(
         """

@@ -10,6 +10,14 @@ import {
 import type { Channel, Contact, Conversation, Message, UnreadCounts } from '../types';
 import { takePrefetchOrFetch } from '../prefetch';
 
+type UnreadTrackedConversation = Conversation & { type: 'channel' | 'contact' };
+
+function isUnreadTrackedConversation(
+  conversation: Conversation | null
+): conversation is UnreadTrackedConversation {
+  return conversation?.type === 'channel' || conversation?.type === 'contact';
+}
+
 interface UseUnreadCountsResult {
   unreadCounts: Record<string, number>;
   /** Tracks which conversations have unread messages that mention the user */
@@ -23,6 +31,7 @@ interface UseUnreadCountsResult {
     hasMention?: boolean;
   }) => void;
   renameConversationState: (oldStateKey: string, newStateKey: string) => void;
+  removeConversationState: (stateKey: string) => void;
   markAllRead: () => void;
   refreshUnreads: () => Promise<void>;
 }
@@ -47,14 +56,7 @@ export function useUnreadCounts(
   // (the user is already viewing it, so its count should stay at 0).
   const applyUnreads = useCallback((data: UnreadCounts) => {
     const ac = activeConvRef.current;
-    const activeKey =
-      ac &&
-      ac.type !== 'raw' &&
-      ac.type !== 'map' &&
-      ac.type !== 'visualizer' &&
-      ac.type !== 'search'
-        ? getStateKey(ac.type as 'channel' | 'contact', ac.id)
-        : null;
+    const activeKey = isUnreadTrackedConversation(ac) ? getStateKey(ac.type, ac.id) : null;
 
     if (activeKey) {
       const counts = { ...data.counts };
@@ -122,16 +124,8 @@ export function useUnreadCounts(
   // Mark conversation as read when user views it
   // Calls server API to persist read state across devices
   useEffect(() => {
-    if (
-      activeConversation &&
-      activeConversation.type !== 'raw' &&
-      activeConversation.type !== 'map' &&
-      activeConversation.type !== 'visualizer'
-    ) {
-      const key = getStateKey(
-        activeConversation.type as 'channel' | 'contact',
-        activeConversation.id
-      );
+    if (isUnreadTrackedConversation(activeConversation)) {
+      const key = getStateKey(activeConversation.type, activeConversation.id);
 
       // Update local state immediately for responsive UI
       setUnreadCounts((prev) => {
@@ -235,6 +229,27 @@ export function useUnreadCounts(
     setLastMessageTimes(renameConversationTimeKey(oldStateKey, newStateKey));
   }, []);
 
+  const removeConversationState = useCallback((stateKey: string) => {
+    setUnreadCounts((prev) => {
+      if (!(stateKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[stateKey];
+      return next;
+    });
+    setMentions((prev) => {
+      if (!(stateKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[stateKey];
+      return next;
+    });
+    setUnreadLastReadAts((prev) => {
+      if (!(stateKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[stateKey];
+      return next;
+    });
+  }, []);
+
   // Mark all conversations as read
   // Calls single bulk API endpoint to persist read state
   const markAllRead = useCallback(() => {
@@ -256,6 +271,7 @@ export function useUnreadCounts(
     unreadLastReadAts,
     recordMessageEvent,
     renameConversationState,
+    removeConversationState,
     markAllRead,
     refreshUnreads: fetchUnreads,
   };

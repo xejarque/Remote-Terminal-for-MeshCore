@@ -16,12 +16,6 @@ Backend server + browser interface for MeshCore mesh radio networks. Connect you
 
 ![Screenshot of the application's web interface](app_screenshot.png)
 
-## Disclaimer
-
-This is developed with very heavy agentic assistance -- there is no warranty of fitness for any purpose. It's been lovingly guided by an engineer with a passion for clean code and good tests, but it's still mostly LLM output, so you may find some bugs.
-
-If extending, have your LLM read the three `AGENTS.md` files: `./AGENTS.md`, `./frontend/AGENTS.md`, and `./app/AGENTS.md`.
-
 ## Start Here
 
 Most users should choose one of these paths:
@@ -95,23 +89,17 @@ Access the app at http://localhost:8000.
 
 Source checkouts expect a normal frontend build in `frontend/dist`.
 
-On Linux, if you want this installed as a persistent `systemd` service that starts on boot and restarts automatically on failure, run `bash scripts/install_service.sh` from the repo root.
+> [!NOTE]
+> Running on lightweight hardware, or just do not want to build the frontend locally? From a cloned checkout, run `python3 scripts/setup/fetch_prebuilt_frontend.py` to fetch and unpack a prebuilt frontend into `frontend/prebuilt`, then start the app normally with `uv run uvicorn app.main:app --host 0.0.0.0 --port 8000`.
 
-## Path 1.5: Use The Prebuilt Release Zip
-
-Release zips can be found as an asset within the [releases listed here](https://github.com/jkingsman/Remote-Terminal-for-MeshCore/releases). This can be beneficial on resource constrained systems that cannot cope with the RAM-hungry frontend build process.
-
-If you downloaded the release zip instead of cloning the repo, unpack it and run:
-
-```bash
-cd Remote-Terminal-for-MeshCore
-uv sync
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-The release bundle includes `frontend/prebuilt`, so it does not require a local frontend build.
-
-Alternatively, if you have already cloned the repo, you can fetch just the prebuilt frontend into your working tree without downloading the full release zip via `python3 scripts/fetch_prebuilt_frontend.py`.
+> [!TIP]
+> On Linux, you can also install RemoteTerm as a persistent `systemd` service that starts on boot and restarts automatically on failure:
+>
+> ```bash
+> bash scripts/setup/install_service.sh
+> ```
+>
+> For the full service workflow and post-install operations, see [README_ADVANCED.md](README_ADVANCED.md).
 
 ## Path 2: Docker
 
@@ -119,47 +107,58 @@ Alternatively, if you have already cloned the repo, you can fetch just the prebu
 
 Local Docker builds are architecture-native by default. On Apple Silicon Macs and ARM64 Linux hosts such as Raspberry Pi, `docker compose build` / `docker compose up --build` will produce an ARM64 image unless you override the platform.
 
-Edit `docker-compose.yaml` to set a serial device for passthrough, or uncomment your transport (serial or TCP). Then:
+Create a local `docker-compose.yml` in one of two ways:
+
+1. Copy the example file and edit it by hand:
 
 ```bash
-docker compose up -d
+cp docker-compose.example.yml docker-compose.yml
 ```
 
-The database is stored in `./data/` (bind-mounted), so the container shares the same database as the native app. To rebuild after pulling updates:
+2. Or generate one interactively:
 
 ```bash
-docker compose up -d --build
+bash scripts/setup/install_docker.sh
 ```
 
-To use the prebuilt Docker Hub image instead of building locally, replace:
+Your local `docker-compose.yml` is gitignored so future pulls do not overwrite your Docker settings.
 
-```yaml
-build: .
+The guided Docker flow can collect BLE settings, but BLE access from Docker still needs manual compose customization such as Bluetooth passthrough and possibly privileged mode or host networking. If you want the simpler path for BLE, use the regular Python launch flow instead.
+
+Then customize the local compose file for your transport and launch:
+
+```bash
+docker compose up # -d for background once you validate it's working
 ```
 
-with:
+The database is stored in `./data/` (bind-mounted), so the container shares the same database as the native app.
 
-```yaml
-image: jkingsman/remoteterm-meshcore:latest
-```
-
-Then run:
+To rebuild after pulling updates:
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-Published Docker tags are intended to be multi-arch (`linux/amd64` and `linux/arm64`). If you are building and publishing manually, use Docker Buildx:
+The example file and setup script default to the published Docker Hub image. To build locally from your checkout instead, replace:
 
-```bash
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  -t jkingsman/remoteterm-meshcore:latest \
-  --push .
+```yaml
+image: docker.io/jkingsman/remoteterm-meshcore:latest
 ```
 
-The container runs as root by default for maximum serial passthrough compatibility across host setups. On Linux, if you switch between native and Docker runs, `./data` can end up root-owned. If you do not need that serial compatibility behavior, you can enable the optional `user: "${UID:-1000}:${GID:-1000}"` line in `docker-compose.yaml` to keep ownership aligned with your host user.
+with:
+
+```yaml
+build: .
+```
+
+Then run:
+
+```bash
+docker compose up -d --build
+```
+
+The container runs as root by default for maximum serial passthrough compatibility across host setups. On Linux, if you switch between native and Docker runs, `./data` can end up root-owned. If you do not need that serial compatibility behavior, you can enable the optional `user: "${UID:-1000}:${GID:-1000}"` line in `docker-compose.yml` to keep ownership aligned with your host user.
 
 To stop:
 
@@ -212,3 +211,9 @@ If you enable Basic Auth, protect the app with HTTPS. HTTP Basic credentials are
 - Advanced setup, troubleshooting, HTTPS, systemd, remediation variables, and debug logging: [README_ADVANCED.md](README_ADVANCED.md)
 - Contributing, tests, linting, E2E notes, and important AGENTS files: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Live API docs after the backend is running: http://localhost:8000/docs
+
+## Disclaimer
+
+This is developed with very heavy agentic assistance -- there is no warranty of fitness for any purpose. It's been lovingly guided by an engineer with a passion for clean code and good tests, but it's still mostly LLM output, so you may find some bugs.
+
+If extending, have your LLM read the three `AGENTS.md` files: `./AGENTS.md`, `./frontend/AGENTS.md`, and `./app/AGENTS.md`.

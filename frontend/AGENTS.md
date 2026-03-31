@@ -39,6 +39,8 @@ frontend/src/
 ├── index.css               # Global styles/utilities
 ├── styles.css              # Additional global app styles
 ├── themes.css              # Color theme definitions
+├── contexts/
+│   └── DistanceUnitContext.tsx # Browser-local distance-unit context/provider
 ├── lib/
 │   └── utils.ts            # cn() — clsx + tailwind-merge helper
 ├── hooks/
@@ -53,10 +55,14 @@ frontend/src/
 │   ├── useRadioControl.ts          # Radio health/config state, reconnection, mesh discovery sweeps
 │   ├── useAppSettings.ts           # Settings, favorites, preferences migration
 │   ├── useConversationRouter.ts    # URL hash → active conversation routing
-│   └── useContactsAndChannels.ts   # Contact/channel loading, creation, deletion
+│   ├── useContactsAndChannels.ts   # Contact/channel loading, creation, deletion
+│   ├── useBrowserNotifications.ts  # Per-conversation browser notification preferences + dispatch
+│   ├── useFaviconBadge.ts          # Browser tab unread badge state
+│   ├── useRawPacketStatsSession.ts # Session-scoped packet-feed stats history
+│   └── useRememberedServerPassword.ts # Browser-local repeater/room password persistence
 ├── components/
-│   ├── AppShell.tsx            # App-shell layout: status, sidebar, search/settings panes, cracker, modals
-│   ├── ConversationPane.tsx    # Active conversation surface selection (map/raw/repeater/chat/empty)
+│   ├── AppShell.tsx            # App-shell layout: status, sidebar, search/settings panes, cracker, modals, security warning
+│   ├── ConversationPane.tsx    # Active conversation surface selection (map/raw/trace/repeater/room/chat/empty)
 │   ├── visualizer/
 │   │   ├── useVisualizerData3D.ts   # Packet→graph data pipeline, repeat aggregation, simulation state
 │   │   ├── useVisualizer3DScene.ts  # Three.js scene lifecycle, buffers, hover/pin interaction
@@ -73,14 +79,18 @@ frontend/src/
 │   ├── pubkey.ts               # getContactDisplayName (12-char prefix fallback)
 │   ├── contactAvatar.ts        # Avatar color derivation from public key
 │   ├── rawPacketIdentity.ts    # observation_id vs id dedup helpers
+│   ├── rawPacketStats.ts       # Session packet stats windows, rankings, and coverage helpers
 │   ├── regionScope.ts          # Regional flood-scope label/normalization helpers
 │   ├── visualizerUtils.ts      # 3D visualizer node types, colors, particles
 │   ├── visualizerSettings.ts   # LocalStorage persistence for visualizer options
 │   ├── a11y.ts                 # Keyboard accessibility helper
+│   ├── distanceUnits.ts        # Browser-local distance unit persistence/helpers
 │   ├── lastViewedConversation.ts   # localStorage for last-viewed conversation
 │   ├── contactMerge.ts            # Merge WS contact updates into list
 │   ├── localLabel.ts              # Local label (text + color) in localStorage
 │   ├── radioPresets.ts            # LoRa radio preset configurations
+│   ├── publicChannel.ts           # Public-channel resolution helpers for routing/hash defaults
+│   ├── fontScale.ts               # Browser-local relative font scale persistence/application
 │   └── theme.ts                   # Theme switching helpers
 ├── components/
 │   ├── StatusBar.tsx
@@ -91,8 +101,12 @@ frontend/src/
 │   ├── NewMessageModal.tsx
 │   ├── SearchView.tsx          # Full-text message search pane
 │   ├── SettingsModal.tsx       # Layout shell — delegates to settings/ sections
+│   ├── SecurityWarningModal.tsx # Startup warning for trusted-network / bot execution posture
 │   ├── RawPacketList.tsx
+│   ├── RawPacketFeedView.tsx   # Live raw packet feed + session stats drawer
+│   ├── RawPacketDetailModal.tsx # On-demand packet inspector dialog
 │   ├── MapView.tsx
+│   ├── TracePane.tsx           # Multi-hop route trace builder/results view
 │   ├── VisualizerView.tsx
 │   ├── PacketVisualizer3D.tsx
 │   ├── PathModal.tsx
@@ -102,15 +116,20 @@ frontend/src/
 │   ├── ContactAvatar.tsx
 │   ├── ContactInfoPane.tsx     # Contact detail sheet (stats, name history, paths)
 │   ├── ContactStatusInfo.tsx   # Contact status info component
+│   ├── ContactPathDiscoveryModal.tsx # Forward/return path discovery dialog
+│   ├── ContactRoutingOverrideModal.tsx # Manual direct-route override editor
 │   ├── RepeaterDashboard.tsx   # Layout shell — delegates to repeater/ panes
 │   ├── RepeaterLogin.tsx       # Repeater login form (password + guest)
+│   ├── RoomServerPanel.tsx     # Room-server auth gate + status banner ahead of room chat
+│   ├── ServerLoginStatusBanner.tsx # Shared repeater/room login state banner
 │   ├── ChannelInfoPane.tsx     # Channel detail sheet (stats, top senders)
+│   ├── ChannelFloodScopeOverrideModal.tsx # Per-channel flood-scope override editor
 │   ├── DirectTraceIcon.tsx     # Shared direct-trace glyph used in header/dashboard
 │   ├── NeighborsMiniMap.tsx    # Leaflet mini-map for repeater neighbor locations
 │   ├── settings/
 │   │   ├── settingsConstants.ts          # Settings section type, ordering, labels
 │   │   ├── SettingsRadioSection.tsx      # Name, keys, advert interval, max contacts, radio preset, freq/bw/sf/cr, txPower, lat/lon, reboot, mesh discovery
-│   │   ├── SettingsLocalSection.tsx      # Browser-local settings: theme, local label, reopen last conversation
+│   │   ├── SettingsLocalSection.tsx      # Browser-local settings: theme, relative font scale, local label, reopen last conversation
 │   │   ├── SettingsFanoutSection.tsx     # Fanout integrations: MQTT, bots, config CRUD
 │   │   ├── SettingsDatabaseSection.tsx   # DB size, cleanup, auto-decrypt, local label
 │   │   ├── SettingsStatisticsSection.tsx # Read-only mesh network stats
@@ -130,12 +149,13 @@ frontend/src/
 │   └── ui/                     # shadcn/ui primitives
 ├── types/
 │   └── d3-force-3d.d.ts       # Type declarations for d3-force-3d
-└── test/
+└── test/                      # Representative frontend test suites (not an exhaustive listing)
     ├── setup.ts
     ├── fixtures/websocket_events.json
     ├── api.test.ts
     ├── appFavorites.test.tsx
     ├── appStartupHash.test.tsx
+    ├── conversationPane.test.tsx
     ├── contactAvatar.test.ts
     ├── contactInfoPane.test.tsx
     ├── integration.test.ts
@@ -146,18 +166,23 @@ frontend/src/
     ├── rawPacketList.test.tsx
     ├── pathUtils.test.ts
     ├── prefetch.test.ts
+    ├── rawPacketDetailModal.test.tsx
+    ├── rawPacketFeedView.test.tsx
     ├── radioPresets.test.ts
     ├── rawPacketIdentity.test.ts
     ├── repeaterDashboard.test.tsx
     ├── repeaterFormatters.test.ts
     ├── repeaterLogin.test.tsx
     ├── repeaterMessageParsing.test.ts
+    ├── roomServerPanel.test.tsx
+    ├── securityWarningModal.test.tsx
     ├── localLabel.test.ts
     ├── messageInput.test.tsx
     ├── newMessageModal.test.tsx
     ├── settingsModal.test.tsx
     ├── sidebar.test.tsx
     ├── statusBar.test.tsx
+    ├── tracePane.test.tsx
     ├── unreadCounts.test.ts
     ├── urlHash.test.ts
     ├── appSearchJump.test.tsx
@@ -169,12 +194,17 @@ frontend/src/
     ├── useConversationMessages.race.test.ts
     ├── useConversationNavigation.test.ts
     ├── useAppShell.test.ts
+    ├── useBrowserNotifications.test.ts
+    ├── useFaviconBadge.test.ts
     ├── useRepeaterDashboard.test.ts
+    ├── useRememberedServerPassword.test.ts
     ├── useContactsAndChannels.test.ts
     ├── useRealtimeAppState.test.ts
     ├── useUnreadCounts.test.ts
     ├── useWebSocket.dispatch.test.ts
     ├── useWebSocket.lifecycle.test.ts
+    ├── rawPacketStats.test.ts
+    ├── fontScale.test.ts
     └── wsEvents.test.ts
 
 ```
@@ -190,6 +220,7 @@ frontend/src/
 - search/settings surface switching
 - global cracker mount/focus behavior
 - new-message modal and info panes
+- trusted-network `SecurityWarningModal`
 
 High-level state is delegated to hooks:
 - `useAppShell`: app-shell view state (settings section, sidebar, cracker, new-message modal)
@@ -211,7 +242,9 @@ High-level state is delegated to hooks:
 - map view
 - visualizer
 - raw packet feed
+- trace view
 - repeater dashboard
+- room-server auth/status gate before room chat
 - normal chat chrome (`ChatHeader` + `MessageList` + `MessageInput`)
 
 ### Initial load + realtime
@@ -272,12 +305,16 @@ Supported routes:
 - `#map/focus/{pubkey_or_prefix}`
 - `#visualizer`
 - `#search`
+- `#trace`
+- `#settings/{section}`
 - `#channel/{channelKey}`
 - `#channel/{channelKey}/{label}`
 - `#contact/{publicKey}`
 - `#contact/{publicKey}/{label}`
 
-Legacy name-based hashes are still accepted for compatibility.
+Where `{section}` is one of `radio`, `local`, `fanout`, `database`, `statistics`, or `about`.
+
+Legacy name-based channel/contact hashes are still accepted for compatibility.
 
 ## Conversation State Keys (`utils/conversationState.ts`)
 
@@ -377,6 +414,12 @@ For repeater contacts (`type=2`), `ConversationPane.tsx` renders `RepeaterDashbo
 
 All state is managed by `useRepeaterDashboard` hook. State resets on conversation change.
 
+## Room Server Panel
+
+For room contacts (`type=3`), `ConversationPane.tsx` keeps the normal chat surface but inserts `RoomServerPanel` above it. That panel handles room-server login/status messaging and gates room chat behind the room-authenticated state when required.
+
+`ServerLoginStatusBanner` is shared between repeater and room login surfaces for inline status/error display.
+
 ## Message Search Pane
 
 The `SearchView` component (`components/SearchView.tsx`) provides full-text search across all DMs and channel messages. Key behaviors:
@@ -404,7 +447,7 @@ Do not rely on old class-only layout assumptions.
 Run all quality checks (backend + frontend) from the repo root:
 
 ```bash
-./scripts/all_quality.sh
+./scripts/quality/all_quality.sh
 ```
 
 Or run frontend checks individually:

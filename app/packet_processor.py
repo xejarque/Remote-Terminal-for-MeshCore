@@ -122,20 +122,20 @@ async def run_historical_dm_decryption(
     """Background task to decrypt historical DM packets with contact's key."""
     from app.websocket import broadcast_success
 
-    packets = await RawPacketRepository.get_undecrypted_text_messages()
-    total = len(packets)
+    total = 0
     decrypted_count = 0
 
-    if total == 0:
-        logger.info("No undecrypted TEXT_MESSAGE packets to process")
-        return
-
-    logger.info("Starting historical DM decryption of %d TEXT_MESSAGE packets", total)
+    logger.info("Starting historical DM decryption scan for undecrypted TEXT_MESSAGE packets")
 
     # Derive our public key from the private key
     our_public_key_bytes = derive_public_key(private_key_bytes)
 
-    for packet_id, packet_data, packet_timestamp in packets:
+    async for (
+        packet_id,
+        packet_data,
+        packet_timestamp,
+    ) in RawPacketRepository.stream_undecrypted_text_messages():
+        total += 1
         # Note: passing our_public_key=None disables the outbound hash check in
         # try_decrypt_dm (only the inbound check src_hash == their_first_byte runs).
         # For the 255/256 case where our first byte differs from the contact's,
@@ -186,6 +186,10 @@ async def run_historical_dm_decryption(
 
             if msg_id is not None:
                 decrypted_count += 1
+
+    if total == 0:
+        logger.info("No undecrypted TEXT_MESSAGE packets to process")
+        return
 
     logger.info(
         "Historical DM decryption complete: %d/%d packets decrypted",
@@ -264,9 +268,10 @@ async def process_raw_packet(
     This is the main entry point for all incoming RF packets.
 
     Note: Packets are deduplicated by payload hash in the database. If we receive
-    a duplicate packet (same payload, different path), we still broadcast it to
-    the frontend (for the real-time packet feed) but skip decryption processing
-    since the original packet was already processed.
+    a duplicate payload (same payload, different path), we still broadcast it to
+    the frontend for realtime packet-feed fidelity. Some payload types are also
+    intentionally reprocessed on duplicate arrival so message-level dedup/path
+    merge logic and advert/path-history tracking still see each observation.
     """
     ts = timestamp or int(time.time())
     observation_id = next(_raw_observation_counter)

@@ -7,7 +7,7 @@
 If instructed to "run all tests" or "get ready for a commit" or other summative, work ending directives, run:
 
 ```bash
-./scripts/all_quality.sh
+./scripts/quality/all_quality.sh
 ```
 
 This is the repo's end-to-end quality gate. It runs backend/frontend autofixers first, then type checking, tests, and the standard frontend build. All checks must pass green, and the script may leave formatting/lint edits behind.
@@ -210,10 +210,16 @@ This message-layer echo/path handling is independent of raw-packet storage dedup
 │   │       └── ...
 │   └── vite.config.ts
 ├── scripts/                # Quality / release helpers (listing below is representative, not exhaustive)
-│   ├── all_quality.sh      # Repo-standard autofix + validate gate
-│   ├── collect_licenses.sh # Gather third-party license attributions
-│   ├── e2e.sh              # End-to-end test runner
-│   └── publish.sh          # Version bump, changelog, docker build & push
+│   ├── build/
+│   │   ├── collect_licenses.sh # Gather third-party license attributions
+│   │   └── publish.sh          # Version bump, changelog, docker build & push
+│   ├── quality/
+│   │   ├── all_quality.sh      # Repo-standard autofix + validate gate
+│   │   ├── e2e.sh              # End-to-end test runner
+│   │   └── extended_quality.sh # Quality gate plus e2e and Docker matrix
+│   └── setup/
+│       ├── fetch_prebuilt_frontend.py # Download release frontend fallback
+│       └── install_service.sh         # Install/configure Linux systemd service
 ├── README_ADVANCED.md      # Advanced setup, troubleshooting, and service guidance
 ├── CONTRIBUTING.md         # Contributor workflow and testing guidance
 ├── tests/                  # Backend tests (pytest)
@@ -271,23 +277,23 @@ PYTHONPATH=. uv run pytest tests/ -v
 ```
 
 Key test files:
-- `tests/test_decoder.py` - Channel + direct message decryption, key exchange
-- `tests/test_keystore.py` - Ephemeral key store
-- `tests/test_event_handlers.py` - ACK tracking, repeat detection
-- `tests/test_packet_pipeline.py` - End-to-end packet processing
-- `tests/test_api.py` - API endpoints, read state tracking
-- `tests/test_migrations.py` - Database migration system
-- `tests/test_frontend_static.py` - Frontend static route registration (missing `dist`/`index.html` handling)
-- `tests/test_messages_search.py` - Message search, around endpoint, forward pagination
-- `tests/test_rx_log_data.py` - on_rx_log_data event handler integration
-- `tests/test_ack_tracking_wiring.py` - DM ACK tracking extraction and wiring
-- `tests/test_radio_lifecycle_service.py` - Radio reconnect/setup orchestration helpers
-- `tests/test_radio_commands_service.py` - Radio config/private-key service workflows
-- `tests/test_health_mqtt_status.py` - Health endpoint MQTT status field
-- `tests/test_community_mqtt.py` - Community MQTT publisher (JWT, packet format, hash, broadcast)
-- `tests/test_radio_sync.py` - Radio sync, periodic tasks, and contact offload back to the radio
-- `tests/test_real_crypto.py` - Real cryptographic operations
-- `tests/test_disable_bots.py` - MESHCORE_DISABLE_BOTS=true feature
+- `tests/test_api.py` - Broad API integration coverage across routers and read-state flows
+- `tests/test_packet_pipeline.py` - End-to-end packet processing, decrypt, dedup, and message creation
+- `tests/test_event_handlers.py` - ACK tracking, fallback DM handling, and event subscription cleanup
+- `tests/test_send_messages.py` - Outgoing DM/channel send workflows, retries, and bot-trigger wiring
+- `tests/test_packets_router.py` - Historical decrypt, maintenance, and raw-packet detail endpoints
+- `tests/test_repeater_routes.py` - Repeater command/telemetry/trace pane endpoints
+- `tests/test_room_routes.py` - Room-server login/status/ACL/telemetry endpoints
+- `tests/test_radio_router.py` - Radio config, advert, discovery, trace, and reconnect endpoints
+- `tests/test_radio_sync.py` - Radio sync, periodic tasks, contact offload/reload, and pending-message flushes
+- `tests/test_fanout.py` - Fanout config CRUD, scope matching, and manager dispatch
+- `tests/test_fanout_integration.py` - Integration-module lifecycle and delivery behavior
+- `tests/test_statistics.py` - Aggregated mesh/network statistics and noise-floor snapshots
+- `tests/test_version_info.py` - Version/build metadata resolution
+- `tests/test_websocket.py` - WS manager broadcast and cleanup behavior
+- `tests/test_frontend_static.py` - Frontend static route registration and fallback behavior
+
+For the fuller backend inventory, see `app/AGENTS.md`. For frontend-specific suites, see `frontend/AGENTS.md`.
 
 ### Frontend (Vitest)
 
@@ -298,7 +304,7 @@ npm run test:run
 
 ### Before Completing Major Changes
 
-**Run `./scripts/all_quality.sh` before finishing major changes that have modified code or tests.** It is the standard repo gate: autofix first, then type checks, tests, and the standard frontend build. This is not necessary for docs-only changes. For minor changes (like wording, color, spacing, etc.), wait until prompted to run the quality gate.
+**Run `./scripts/quality/all_quality.sh` before finishing major changes that have modified code or tests.** It is the standard repo gate: autofix first, then type checks, tests, and the standard frontend build. This is not necessary for docs-only changes. For minor changes (like wording, color, spacing, etc.), wait until prompted to run the quality gate.
 
 ## API Summary
 
@@ -313,6 +319,7 @@ All endpoints are prefixed with `/api` (e.g., `/api/health`).
 | PUT | `/api/radio/private-key` | Import private key to radio |
 | POST | `/api/radio/advertise` | Send advertisement (`mode`: `flood` or `zero_hop`, default `flood`) |
 | POST | `/api/radio/discover` | Run a short mesh discovery sweep for nearby repeaters/sensors |
+| POST | `/api/radio/trace` | Send a multi-hop trace loop through known repeaters and back to the local radio |
 | POST | `/api/radio/reboot` | Reboot radio or reconnect if disconnected |
 | POST | `/api/radio/disconnect` | Disconnect from radio and pause automatic reconnect attempts |
 | POST | `/api/radio/reconnect` | Manual radio reconnection |
@@ -335,6 +342,10 @@ All endpoints are prefixed with `/api` (e.g., `/api/health`).
 | POST | `/api/contacts/{public_key}/repeater/radio-settings` | Fetch repeater radio config via CLI |
 | POST | `/api/contacts/{public_key}/repeater/advert-intervals` | Fetch advert intervals |
 | POST | `/api/contacts/{public_key}/repeater/owner-info` | Fetch owner info |
+| POST | `/api/contacts/{public_key}/room/login` | Log in to a room server |
+| POST | `/api/contacts/{public_key}/room/status` | Fetch room-server status telemetry |
+| POST | `/api/contacts/{public_key}/room/lpp-telemetry` | Fetch room-server CayenneLPP sensor data |
+| POST | `/api/contacts/{public_key}/room/acl` | Fetch room-server ACL entries |
 
 | GET | `/api/channels` | List channels |
 | GET | `/api/channels/{key}/detail` | Comprehensive channel profile (message stats, top senders) |
@@ -348,6 +359,7 @@ All endpoints are prefixed with `/api` (e.g., `/api/health`).
 | POST | `/api/messages/channel` | Send channel message |
 | POST | `/api/messages/channel/{message_id}/resend` | Resend channel message (default: byte-perfect within 30s; `?new_timestamp=true`: fresh timestamp, no time limit, creates new message row) |
 | GET | `/api/packets/undecrypted/count` | Count of undecrypted packets |
+| GET | `/api/packets/{packet_id}` | Fetch one stored raw packet by row ID for on-demand inspection |
 | POST | `/api/packets/decrypt/historical` | Decrypt stored packets |
 | POST | `/api/packets/maintenance` | Delete old packets and vacuum |
 | GET | `/api/read-state/unreads` | Server-computed unread counts, mentions, last message times, and `last_read_ats` boundaries |
@@ -362,6 +374,7 @@ All endpoints are prefixed with `/api` (e.g., `/api/health`).
 | POST | `/api/fanout` | Create new fanout config |
 | PATCH | `/api/fanout/{id}` | Update fanout config (triggers module reload) |
 | DELETE | `/api/fanout/{id}` | Delete fanout config (stops module) |
+| POST | `/api/fanout/bots/disable-until-restart` | Stop bot fanout modules and keep bots disabled until the process restarts |
 | GET | `/api/statistics` | Aggregated mesh network statistics |
 | WS | `/api/ws` | Real-time updates |
 

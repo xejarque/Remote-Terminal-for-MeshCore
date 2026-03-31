@@ -1,6 +1,8 @@
 """Tests for the statistics repository and endpoint."""
 
 import time
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -347,3 +349,75 @@ class TestPathHashWidthStats:
         assert breakdown["single_byte_pct"] == pytest.approx(100 / 3, rel=1e-3)
         assert breakdown["double_byte_pct"] == pytest.approx(100 / 3, rel=1e-3)
         assert breakdown["triple_byte_pct"] == pytest.approx(100 / 3, rel=1e-3)
+
+    @pytest.mark.asyncio
+    async def test_path_hash_width_scan_uses_batched_fetchmany(self, test_db):
+        """Hash-width stats should stream batches instead of calling fetchall()."""
+
+        class FakeCursor:
+            def __init__(self):
+                self._batches = [
+                    [{"data": b"a"}, {"data": b"b"}],
+                    [{"data": b"c"}],
+                    [],
+                ]
+                self.fetchall_called = False
+
+            async def fetchmany(self, size):
+                assert size > 0
+                return self._batches.pop(0)
+
+            async def fetchall(self):
+                self.fetchall_called = True
+                raise AssertionError("fetchall() should not be used")
+
+        fake_cursor = FakeCursor()
+
+        def fake_parse(raw_packet: bytes):
+            hash_sizes = {
+                b"a": 1,
+                b"b": 2,
+                b"c": 3,
+            }
+            hash_size = hash_sizes.get(raw_packet)
+            if hash_size is None:
+                return None
+            return SimpleNamespace(hash_size=hash_size)
+
+        with (
+            patch.object(test_db.conn, "execute", new=AsyncMock(return_value=fake_cursor)),
+            patch("app.repository.settings.parse_packet_envelope", side_effect=fake_parse),
+        ):
+            breakdown = await StatisticsRepository._path_hash_width_24h()
+
+        assert fake_cursor.fetchall_called is False
+        assert breakdown["total_packets"] == 3
+        assert breakdown["single_byte"] == 1
+        assert breakdown["double_byte"] == 1
+        assert breakdown["triple_byte"] == 1
+
+
+class TestStatisticsEndpoint:
+    @pytest.mark.asyncio
+    async def test_statistics_endpoint_includes_noise_floor_history(self, test_db, client):
+        noise_floor_history = {
+            "sample_interval_seconds": 300,
+            "coverage_seconds": 1800,
+            "latest_noise_floor_dbm": -119,
+            "latest_timestamp": 1_700_000_000,
+            "supported": True,
+            "samples": [
+                {"timestamp": 1_699_998_200, "noise_floor_dbm": -121},
+                {"timestamp": 1_700_000_000, "noise_floor_dbm": -119},
+            ],
+        }
+
+        with patch(
+            "app.routers.statistics.get_noise_floor_history",
+            new=AsyncMock(return_value=noise_floor_history),
+        ):
+            response = await client.get("/api/statistics")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["noise_floor_24h"] == noise_floor_history
