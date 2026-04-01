@@ -22,12 +22,15 @@ REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 COMPOSE_FILE="$REPO_DIR/docker-compose.yml"
 EXAMPLE_FILE="$REPO_DIR/docker-compose.example.yml"
 SNAKEOIL_CERT_DIR="$REPO_DIR/.docker-certs"
+NGINX_CONFIG_DIR="$REPO_DIR/.docker-nginx"
+NGINX_CONFIG_BASENAME="remoteterm.conf"
+NGINX_CONFIG_HOST_PATH="$NGINX_CONFIG_DIR/$NGINX_CONFIG_BASENAME"
 SNAKEOIL_CERT_BASENAME="remoteterm-snakeoil.crt"
 SNAKEOIL_KEY_BASENAME="remoteterm-snakeoil.key"
 SNAKEOIL_CERT_HOST_PATH="$SNAKEOIL_CERT_DIR/$SNAKEOIL_CERT_BASENAME"
 SNAKEOIL_KEY_HOST_PATH="$SNAKEOIL_CERT_DIR/$SNAKEOIL_KEY_BASENAME"
-SNAKEOIL_CERT_CONTAINER_PATH="/app/certs/$SNAKEOIL_CERT_BASENAME"
-SNAKEOIL_KEY_CONTAINER_PATH="/app/certs/$SNAKEOIL_KEY_BASENAME"
+SNAKEOIL_CERT_CONTAINER_PATH="/etc/nginx/certs/$SNAKEOIL_CERT_BASENAME"
+SNAKEOIL_KEY_CONTAINER_PATH="/etc/nginx/certs/$SNAKEOIL_KEY_BASENAME"
 
 IMAGE_MODE="image"
 TRANSPORT_MODE="serial"
@@ -209,6 +212,49 @@ EOF
 
     chmod 600 "$SNAKEOIL_KEY_HOST_PATH"
     chmod 644 "$SNAKEOIL_CERT_HOST_PATH"
+}
+
+generate_nginx_tls_config() {
+    mkdir -p "$NGINX_CONFIG_DIR"
+
+    cat >"$NGINX_CONFIG_HOST_PATH" <<EOF
+server {
+    listen 80;
+    server_name _;
+    return 308 https://\$host:8000\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name _;
+
+    ssl_certificate $SNAKEOIL_CERT_CONTAINER_PATH;
+    ssl_certificate_key $SNAKEOIL_KEY_CONTAINER_PATH;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    location /api/ws {
+        proxy_pass http://remoteterm:8000/api/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Port 8000;
+    }
+
+    location / {
+        proxy_pass http://remoteterm:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Port 8000;
+        proxy_read_timeout 300s;
+    }
+}
+EOF
 }
 
 echo -e "${BOLD}=== RemoteTerm for MeshCore — Docker Setup ===${NC}"
@@ -400,7 +446,9 @@ LOCAL_ACCESS_IP="$(detect_primary_local_ip)"
 if [[ "$ENABLE_SNAKEOIL_TLS" =~ ^[Yy]$ ]]; then
     ensure_snakeoil_requirements
     generate_snakeoil_certificate "$LOCAL_ACCESS_IP"
+    generate_nginx_tls_config
     echo -e "${GREEN}Generated snakeoil TLS certificate in ${SNAKEOIL_CERT_DIR}.${NC}"
+    echo -e "${GREEN}Generated nginx TLS proxy config in ${NGINX_CONFIG_DIR}.${NC}"
     echo -e "${YELLOW}Browsers will show an untrusted/self-signed certificate warning.${NC}"
 else
     echo -e "${GREEN}Skipping snakeoil TLS generation. The container will serve plain HTTP.${NC}"
@@ -441,31 +489,18 @@ mkdir -p "$REPO_DIR/data"
     if [[ "$RUN_AS_HOST_USER" =~ ^[Yy]$ ]]; then
         echo "    user: \"$(id -u):$(id -g)\""
     fi
-    echo "    ports:"
-    echo "      - \"8000:8000\""
+    if [[ "$ENABLE_SNAKEOIL_TLS" =~ ^[Yy]$ ]]; then
+        echo "    expose:"
+        echo "      - \"8000\""
+    else
+        echo "    ports:"
+        echo "      - \"8000:8000\""
+    fi
     echo "    volumes:"
     echo "      - ./data:/app/data"
-    if [[ "$ENABLE_SNAKEOIL_TLS" =~ ^[Yy]$ ]]; then
-        echo "      - ./.docker-certs:/app/certs:ro"
-    fi
     if [ "$TRANSPORT_MODE" = "serial" ]; then
         echo "    devices:"
         echo "      - ${SERIAL_COMPOSE_HOST_PATH}:${SERIAL_CONTAINER_PATH}"
-    fi
-    if [[ "$ENABLE_SNAKEOIL_TLS" =~ ^[Yy]$ ]]; then
-        echo "    command:"
-        echo "      - uv"
-        echo "      - run"
-        echo "      - uvicorn"
-        echo "      - app.main:app"
-        echo "      - --host"
-        echo "      - 0.0.0.0"
-        echo "      - --port"
-        echo "      - \"8000\""
-        echo "      - --ssl-keyfile"
-        echo "      - $SNAKEOIL_KEY_CONTAINER_PATH"
-        echo "      - --ssl-certfile"
-        echo "      - $SNAKEOIL_CERT_CONTAINER_PATH"
     fi
     echo "    environment:"
     echo "      MESHCORE_DATABASE_PATH: $(yaml_quote "data/meshcore.db")"
@@ -486,6 +521,19 @@ mkdir -p "$REPO_DIR/data"
         echo "      MESHCORE_BASIC_AUTH_PASSWORD: $(yaml_quote "$AUTH_PASSWORD")"
     fi
     echo "    restart: unless-stopped"
+    if [[ "$ENABLE_SNAKEOIL_TLS" =~ ^[Yy]$ ]]; then
+        echo "  nginx:"
+        echo "    image: nginx:alpine"
+        echo "    depends_on:"
+        echo "      - remoteterm"
+        echo "    ports:"
+        echo "      - \"80:80\""
+        echo "      - \"8000:443\""
+        echo "    volumes:"
+        echo "      - ./.docker-certs:/etc/nginx/certs:ro"
+        echo "      - ./.docker-nginx/$NGINX_CONFIG_BASENAME:/etc/nginx/conf.d/default.conf:ro"
+        echo "    restart: unless-stopped"
+    fi
 } >"$COMPOSE_FILE"
 
 echo -e "${GREEN}Generated ${COMPOSE_FILE}.${NC}"
@@ -504,6 +552,11 @@ echo "  sudo docker compose pull && sudo docker compose up -d   # upgrade to the
 echo
 echo -e "${YELLOW}Note:${NC} serial passthrough generally needs ${BOLD}rootful Docker${NC}."
 echo "If Docker is running rootless on this host, serial-device mappings may fail even with a valid compose file."
+if [[ "$ENABLE_SNAKEOIL_TLS" =~ ^[Yy]$ ]]; then
+    echo
+    echo -e "${GREEN}HTTPS will be handled by an nginx sidecar.${NC}"
+    echo "Host port 80 will redirect to HTTPS on port 8000."
+fi
 if [ "$TRANSPORT_MODE" = "ble" ] || [ "$BLE_MANUAL_WARNING" = true ]; then
     echo
     echo -e "${RED}BLE requires more than the generated env vars.${NC}"
@@ -519,6 +572,7 @@ echo -e "${PURPLE}└───────────────────�
 if [[ "$ENABLE_SNAKEOIL_TLS" =~ ^[Yy]$ ]]; then
     echo
     echo -e "After the container starts, open ${CYAN}https://${LOCAL_ACCESS_IP}:8000${NC}. Note that this address may change if you use DHCP/have not configured a static IP for your host via your router."
+    echo -e "Plain HTTP on ${CYAN}http://${LOCAL_ACCESS_IP}${NC} will redirect there automatically."
     echo -e "${YELLOW}Expect an untrusted/self-signed certificate warning the first time you connect.${NC}"
 else
     echo
