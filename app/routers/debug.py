@@ -1,5 +1,8 @@
 import hashlib
 import logging
+import os
+import platform
+import struct
 import sys
 from datetime import datetime, timezone
 from typing import Any
@@ -9,8 +12,9 @@ from meshcore import EventType
 from pydantic import BaseModel, Field
 
 from app.config import get_recent_log_lines, settings
+from app.models import AppSettings
 from app.radio_sync import get_contacts_selected_for_radio_sync, get_radio_channel_limit
-from app.repository import MessageRepository, StatisticsRepository
+from app.repository import AppSettingsRepository, MessageRepository, StatisticsRepository
 from app.routers.health import HealthResponse, build_health_data
 from app.services.radio_runtime import radio_runtime
 from app.version_info import get_app_build_info, git_output
@@ -32,6 +36,13 @@ LOG_COPY_BOUNDARY_PREFIX = [
     LOG_COPY_BOUNDARY_LINE,
     LOG_COPY_BOUNDARY_LINE,
 ]
+
+
+class DebugSystemInfo(BaseModel):
+    os: str
+    arch: str
+    arch_bits: int
+    total_ram_mb: int
 
 
 class DebugApplicationInfo(BaseModel):
@@ -93,14 +104,42 @@ class DebugDatabaseInfo(BaseModel):
     total_outgoing: int
 
 
+class DebugAppSettings(BaseModel):
+    max_radio_contacts: int
+    auto_decrypt_dm_on_advert: bool
+    advert_interval: int
+    flood_scope: str
+    blocked_keys_count: int
+    blocked_names_count: int
+
+
 class DebugSnapshotResponse(BaseModel):
     captured_at: str
+    system: DebugSystemInfo
     application: DebugApplicationInfo
     health: HealthResponse
+    settings: DebugAppSettings
     runtime: DebugRuntimeInfo
     database: DebugDatabaseInfo
     radio_probe: DebugRadioProbe
     logs: list[str]
+
+
+def _build_system_info() -> DebugSystemInfo:
+    try:
+        # os.sysconf is available on Linux/macOS
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        page_count = os.sysconf("SC_PHYS_PAGES")
+        total_ram_mb = (page_size * page_count) // (1024 * 1024)
+    except (AttributeError, ValueError, OSError):
+        total_ram_mb = 0
+
+    return DebugSystemInfo(
+        os=f"{platform.system()} {platform.release()}",
+        arch=platform.machine(),
+        arch_bits=struct.calcsize("P") * 8,
+        total_ram_mb=total_ram_mb,
+    )
 
 
 def _build_application_info() -> DebugApplicationInfo:
@@ -156,6 +195,17 @@ def _coerce_live_max_channels(device_info: dict[str, Any] | None) -> int | None:
         return int(device_info["max_channels"])
     except (TypeError, ValueError):
         return None
+
+
+def _build_debug_app_settings(app_settings: AppSettings) -> DebugAppSettings:
+    return DebugAppSettings(
+        max_radio_contacts=app_settings.max_radio_contacts,
+        auto_decrypt_dm_on_advert=app_settings.auto_decrypt_dm_on_advert,
+        advert_interval=app_settings.advert_interval,
+        flood_scope=app_settings.flood_scope,
+        blocked_keys_count=len(app_settings.blocked_keys),
+        blocked_names_count=len(app_settings.blocked_names),
+    )
 
 
 async def _build_contact_audit(
@@ -265,6 +315,7 @@ async def _probe_radio() -> DebugRadioProbe:
 async def debug_support_snapshot() -> DebugSnapshotResponse:
     """Return a support/debug snapshot with recent logs and live radio state."""
     health_data = await build_health_data(radio_runtime.is_connected, radio_runtime.connection_info)
+    app_settings = await AppSettingsRepository.get()
     message_totals = await StatisticsRepository.get_database_message_totals()
     radio_probe = await _probe_radio()
     channels_with_incoming_messages = (
@@ -272,8 +323,10 @@ async def debug_support_snapshot() -> DebugSnapshotResponse:
     )
     return DebugSnapshotResponse(
         captured_at=datetime.now(timezone.utc).isoformat(),
+        system=_build_system_info(),
         application=_build_application_info(),
         health=HealthResponse(**health_data),
+        settings=_build_debug_app_settings(app_settings),
         runtime=DebugRuntimeInfo(
             connection_info=radio_runtime.connection_info,
             connection_desired=radio_runtime.connection_desired,
