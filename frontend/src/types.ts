@@ -332,7 +332,6 @@ export interface AppSettings {
   flood_scope: string;
   blocked_keys: string[];
   blocked_names: string[];
-  telemetry_tracked_keys: string[];
 }
 
 export interface AppSettingsUpdate {
@@ -406,6 +405,7 @@ export interface RepeaterStatusResponse {
   flood_dups: number;
   direct_dups: number;
   full_events: number;
+  telemetry_history: TelemetryHistoryEntry[];
 }
 
 export interface RepeaterNeighborsResponse {
@@ -471,13 +471,7 @@ export interface PaneState {
 
 export interface TelemetryHistoryEntry {
   timestamp: number;
-  battery_volts: number;
-  uptime_seconds: number | null;
-  noise_floor_dbm: number | null;
-}
-
-export interface RepeaterTelemetryHistoryResponse {
-  entries: TelemetryHistoryEntry[];
+  data: RepeaterStatusResponse;
 }
 
 export interface TraceResponse {

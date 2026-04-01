@@ -530,6 +530,9 @@ class RepeaterStatusResponse(BaseModel):
     flood_dups: int = Field(description="Duplicate flood packets")
     direct_dups: int = Field(description="Duplicate direct packets")
     full_events: int = Field(description="Full event queue count")
+    telemetry_history: list["TelemetryHistoryEntry"] = Field(
+        default_factory=list, description="Recent telemetry history snapshots"
+    )
 
 
 class RepeaterNodeInfoResponse(BaseModel):
@@ -840,10 +843,6 @@ class AppSettings(BaseModel):
         default_factory=list,
         description="Display names whose messages are hidden from the UI",
     )
-    telemetry_tracked_keys: list[str] = Field(
-        default_factory=list,
-        description="Repeater public keys opted in to hourly telemetry tracking",
-    )
 
 
 class FanoutConfig(BaseModel):
@@ -922,10 +921,4 @@ class StatisticsResponse(BaseModel):
 
 class TelemetryHistoryEntry(BaseModel):
     timestamp: int
-    battery_volts: float
-    uptime_seconds: int | None = None
-    noise_floor_dbm: int | None = None
-
-
-class RepeaterTelemetryHistoryResponse(BaseModel):
-    entries: list[TelemetryHistoryEntry]
+    data: dict

@@ -2919,16 +2919,16 @@ async def _migrate_047_add_statistics_indexes(conn: aiosqlite.Connection) -> Non
 
 
 async def _migrate_048_repeater_telemetry_history(conn: aiosqlite.Connection) -> None:
-    """Create repeater_telemetry_history table and add tracking opt-in column to app_settings."""
+    """Create repeater_telemetry_history table for JSON-blob telemetry snapshots."""
+    # Drop the old column-per-field table if it exists (from the first draft).
+    await conn.execute("DROP TABLE IF EXISTS repeater_telemetry_history")
     await conn.execute(
         """
         CREATE TABLE IF NOT EXISTS repeater_telemetry_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             public_key TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
-            battery_volts REAL NOT NULL,
-            uptime_seconds INTEGER,
-            noise_floor_dbm INTEGER,
+            data TEXT NOT NULL,
             FOREIGN KEY (public_key) REFERENCES contacts(public_key) ON DELETE CASCADE
         )
         """
@@ -2939,10 +2939,4 @@ async def _migrate_048_repeater_telemetry_history(conn: aiosqlite.Connection) ->
             ON repeater_telemetry_history (public_key, timestamp)
         """
     )
-    try:
-        await conn.execute(
-            "ALTER TABLE app_settings ADD COLUMN telemetry_tracked_keys TEXT DEFAULT '[]'"
-        )
-    except Exception:
-        pass  # Column may already exist
     await conn.commit()
