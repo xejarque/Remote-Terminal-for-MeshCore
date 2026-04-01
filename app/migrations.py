@@ -367,7 +367,7 @@ async def run_migrations(conn: aiosqlite.Connection) -> int:
         await set_version(conn, 47)
         applied += 1
 
-    # Migration 48: Repeater telemetry history table + tracking opt-in column
+    # Migration 48: Repeater telemetry history table
     if version < 48:
         logger.info("Applying migration 48: repeater telemetry history")
         await _migrate_048_repeater_telemetry_history(conn)
