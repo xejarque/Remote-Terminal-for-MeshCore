@@ -2920,8 +2920,6 @@ async def _migrate_047_add_statistics_indexes(conn: aiosqlite.Connection) -> Non
 
 async def _migrate_048_repeater_telemetry_history(conn: aiosqlite.Connection) -> None:
     """Create repeater_telemetry_history table for JSON-blob telemetry snapshots."""
-    # Drop the old column-per-field table if it exists (from the first draft).
-    await conn.execute("DROP TABLE IF EXISTS repeater_telemetry_history")
     await conn.execute(
         """
         CREATE TABLE IF NOT EXISTS repeater_telemetry_history (
