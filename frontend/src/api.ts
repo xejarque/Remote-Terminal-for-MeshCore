@@ -35,6 +35,7 @@ import type {
   RepeaterRadioSettingsResponse,
   RepeaterStatusResponse,
   StatisticsResponse,
+  TelemetryHistoryEntry,
   TraceResponse,
   UnreadCounts,
 } from './types';
@@ -374,6 +375,8 @@ export const api = {
     fetchJson<RepeaterStatusResponse>(`/contacts/${publicKey}/repeater/status`, {
       method: 'POST',
     }),
+  repeaterTelemetryHistory: (publicKey: string) =>
+    fetchJson<TelemetryHistoryEntry[]>(`/contacts/${publicKey}/repeater/telemetry-history`),
   repeaterNeighbors: (publicKey: string) =>
     fetchJson<RepeaterNeighborsResponse>(`/contacts/${publicKey}/repeater/neighbors`, {
       method: 'POST',
