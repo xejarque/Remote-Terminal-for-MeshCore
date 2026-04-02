@@ -416,6 +416,12 @@ export interface RepeaterStatusResponse {
   flood_dups: number;
   direct_dups: number;
   full_events: number;
+  telemetry_history: TelemetryHistoryEntry[];
+}
+
+export interface TelemetryHistoryEntry {
+  timestamp: number;
+  data: Record<string, number>;
 }
 
 export interface RepeaterNeighborsResponse {
