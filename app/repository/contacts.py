@@ -398,6 +398,9 @@ class ContactRepository:
         await db.conn.execute(
             "DELETE FROM contact_advert_paths WHERE public_key = ?", (normalized,)
         )
+        await db.conn.execute(
+            "DELETE FROM repeater_telemetry_history WHERE public_key = ?", (normalized,)
+        )
         await db.conn.execute("DELETE FROM contacts WHERE public_key = ?", (normalized,))
         await db.conn.commit()
 
