@@ -51,7 +51,7 @@ vi.mock('../hooks/useRepeaterDashboard', () => ({
   useRepeaterDashboard: () => mockHook,
 }));
 
-// Mock api module
+// Mock api module (used by routing override tests)
 vi.mock('../api', () => ({
   api: {
     setContactRoutingOverride: vi.fn().mockResolvedValue({ status: 'ok' }),
