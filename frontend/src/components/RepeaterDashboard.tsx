@@ -340,10 +340,7 @@ export function RepeaterDashboard({
             />
 
             {/* Telemetry history chart — full width, below console */}
-            <TelemetryHistoryPane
-              entries={paneData.status?.telemetry_history ?? []}
-              statusFetchedAt={paneStates.status.fetched_at}
-            />
+            <TelemetryHistoryPane entries={paneData.status?.telemetry_history ?? []} />
           </div>
         )}
       </div>
