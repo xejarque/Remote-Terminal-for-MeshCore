@@ -367,11 +367,11 @@ async def run_migrations(conn: aiosqlite.Connection) -> int:
         await set_version(conn, 47)
         applied += 1
 
-    # Migration 48: Repeater telemetry history table
-    if version < 48:
-        logger.info("Applying migration 48: repeater telemetry history")
-        await _migrate_048_repeater_telemetry_history(conn)
-        await set_version(conn, 48)
+    # Migration 49: Repeater telemetry history table
+    if version < 49:
+        logger.info("Applying migration 49: repeater telemetry history")
+        await _migrate_049_repeater_telemetry_history(conn)
+        await set_version(conn, 49)
         applied += 1
 
     if applied > 0:
@@ -2918,7 +2918,7 @@ async def _migrate_047_add_statistics_indexes(conn: aiosqlite.Connection) -> Non
     await conn.commit()
 
 
-async def _migrate_048_repeater_telemetry_history(conn: aiosqlite.Connection) -> None:
+async def _migrate_049_repeater_telemetry_history(conn: aiosqlite.Connection) -> None:
     """Create repeater_telemetry_history table for JSON-blob telemetry snapshots."""
     await conn.execute(
         """
