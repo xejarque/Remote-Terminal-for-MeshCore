@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
+import { api } from '../api';
 import { toast } from './ui/sonner';
 import { Button } from './ui/button';
 import { Bell, Route, Star, Trash2 } from 'lucide-react';
@@ -12,7 +13,7 @@ import { isFavorite } from '../utils/favorites';
 import { handleKeyboardActivate } from '../utils/a11y';
 import { isValidLocation } from '../utils/pathUtils';
 import { ContactStatusInfo } from './ContactStatusInfo';
-import type { Contact, Conversation, Favorite, PathDiscoveryResponse } from '../types';
+import type { Contact, Conversation, Favorite, PathDiscoveryResponse, TelemetryHistoryEntry } from '../types';
 import { cn } from '../lib/utils';
 import { TelemetryPane } from './repeater/RepeaterTelemetryPane';
 import { NeighborsPane } from './repeater/RepeaterNeighborsPane';
@@ -65,6 +66,7 @@ export function RepeaterDashboard({
   onDeleteContact,
 }: RepeaterDashboardProps) {
   const [pathDiscoveryOpen, setPathDiscoveryOpen] = useState(false);
+  const [telemetryHistory, setTelemetryHistory] = useState<TelemetryHistoryEntry[]>([]);
   const contact = contacts.find((c) => c.public_key === conversation.id) ?? null;
   const hasAdvertLocation = isValidLocation(contact?.lat ?? null, contact?.lon ?? null);
   const {
@@ -88,6 +90,19 @@ export function RepeaterDashboard({
   } = useRepeaterDashboard(conversation, { hasAdvertLocation });
   const { password, setPassword, rememberPassword, setRememberPassword, persistAfterLogin } =
     useRememberedServerPassword('repeater', conversation.id);
+
+  // Auto-fetch stored telemetry history from DB (no mesh traffic)
+  useEffect(() => {
+    api.repeaterTelemetryHistory(conversation.id).then(setTelemetryHistory).catch(() => {});
+  }, [conversation.id]);
+
+  // Refresh when a live status fetch returns newer data
+  const statusHistory = paneData.status?.telemetry_history;
+  useEffect(() => {
+    if (statusHistory && statusHistory.length > 0) {
+      setTelemetryHistory(statusHistory);
+    }
+  }, [statusHistory]);
 
   const isFav = isFavorite(favorites, 'contact', conversation.id);
 
@@ -340,7 +355,7 @@ export function RepeaterDashboard({
             />
 
             {/* Telemetry history chart — full width, below console */}
-            <TelemetryHistoryPane entries={paneData.status?.telemetry_history ?? []} />
+            <TelemetryHistoryPane entries={telemetryHistory} />
           </div>
         )}
       </div>
