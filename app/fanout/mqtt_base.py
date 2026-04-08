@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 import time
 from abc import ABC, abstractmethod
 from typing import Any
@@ -251,6 +252,26 @@ class BaseMqttPublisher(ABC):
                 self.connected = False
                 self._client = None
                 self._last_error = _format_error_detail(e)
+
+                # Windows ProactorEventLoop does not implement add_reader /
+                # add_writer, which paho-mqtt requires.  Give a specific,
+                # actionable toast instead of the generic connection error.
+                if isinstance(e, NotImplementedError) and sys.platform == "win32":
+                    broadcast_error(
+                        "MQTT unavailable — Windows event loop incompatible",
+                        "The default Windows event loop (ProactorEventLoop) does "
+                        "not support MQTT. Restart with:  uv run uvicorn "
+                        "app.main:app --loop none",
+                    )
+                    _broadcast_health()
+                    logger.error(
+                        "%s cannot run: Windows ProactorEventLoop does not "
+                        "implement add_reader/add_writer required by paho-mqtt. "
+                        "Restart uvicorn with '--loop none' to use "
+                        "SelectorEventLoop instead. Giving up (will not retry).",
+                        self._integration_label(),
+                    )
+                    return
 
                 title, detail = self._on_error()
                 broadcast_error(title, detail)

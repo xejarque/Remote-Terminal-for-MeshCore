@@ -1,3 +1,120 @@
+import os
+import sys
+
+# ---------------------------------------------------------------------------
+# Windows event-loop fix for MQTT fanout (aiomqtt / paho-mqtt) compatibility
+# ---------------------------------------------------------------------------
+# On Windows, uvicorn's default "auto" loop explicitly creates ProactorEventLoop,
+# which does NOT implement add_reader()/add_writer() — calls that paho-mqtt
+# requires internally.  Setting the event loop *policy* alone is not enough
+# because uvicorn's "auto" factory bypasses it.
+#
+# The fix: re-exec the current process with "--loop none", which tells uvicorn
+# to let asyncio.run() create the loop through the standard policy (where we
+# have just installed WindowsSelectorEventLoopPolicy).
+#
+# Guards:
+#   - "--loop" already in argv  → we (or the operator) already handled it
+#   - MESHCORE_NO_AUTO_LOOP_ON_WIN32=true → operator opt-out for custom
+#     runners, test harnesses, or other non-uvicorn invocations
+# ---------------------------------------------------------------------------
+_win32_needs_reexec = (
+    sys.platform == "win32"
+    and os.environ.get("MESHCORE_NO_AUTO_LOOP_ON_WIN32", "").lower() not in ("true", "1")
+    and "--loop" not in sys.argv
+)
+# Skip re-exec when --reload is active: on Windows os.execv spawns a new
+# process and exits, so the reloader's child dies and a fresh uvicorn
+# (with its own reloader) starts — creating doubled watchers or a loop.
+# Also skip if sys.executable is missing (embedded / frozen Python).
+if _win32_needs_reexec and "--reload" in sys.argv:
+    print(
+        "\n" + "!" * 78 + "\n"
+        "  WINDOWS + --reload DETECTED\n" + "!" * 78 + "\n"
+        "\n"
+        "  We can't auto-fix the event loop when --reload is active because\n"
+        "  the re-exec would fight with uvicorn's reloader process.\n"
+        "\n"
+        "  If you need MQTT fanout, add --loop none to your command:\n"
+        "\n"
+        "    uv run uvicorn app.main:app --reload \033[1m--loop none\033[0m [... other options ...]\n"
+        "\n"
+        "  Everything else works fine as-is.\n"
+        "\n" + "!" * 78 + "\n",
+        file=sys.stderr,
+        flush=True,
+    )
+    _win32_needs_reexec = False
+
+if _win32_needs_reexec and not sys.executable:
+    # Embedded or frozen Python — can't re-exec, just warn.
+    _win32_needs_reexec = False
+
+if _win32_needs_reexec:
+    import asyncio as _asyncio
+
+    _asyncio.set_event_loop_policy(
+        _asyncio.WindowsSelectorEventLoopPolicy()  # type: ignore[attr-defined]
+    )
+
+    print(
+        "\n" + "=" * 78 + "\n"
+        "  HALLO FRIEND WINDOWS USER <3 WE GOTTA ADJUST THINGS BEFORE YOU STARTUP\n"
+        + "="
+        * 78
+        + "\n"
+        "\n"
+        "  uvicorn's default event loop on Windows (ProactorEventLoop) is not\n"
+        "  compatible with aiomqtt/paho-mqtt, which require add_reader() /\n"
+        "  add_writer(). Re-executing with '--loop none' so uvicorn honours\n"
+        "  WindowsSelectorEventLoopPolicy and MQTT fanout can function.\n"
+        ""
+        "  In English: The code we use for MQTT is fussy. We're restarting\n"
+        "  the server with the right settings for MQTT to work.\n"
+        "\n"
+        "  This may or may not work :) If the app starts up after this without a warning, you're good to go.\n"
+        "\n" + "=" * 78 + "\n",
+        file=sys.stderr,
+        flush=True,
+    )
+
+    # sys.argv[0] on Windows is typically a .exe console-script launcher
+    # (e.g. .venv\Scripts\uvicorn.exe) which Python can't open as a script.
+    # use "python -m uvicorn" instead, forwarding the original arguments.
+    # yes, this is brittle as all hell.
+    try:
+        os.execv(
+            sys.executable,
+            [sys.executable, "-m", "uvicorn"] + sys.argv[1:] + ["--loop", "none"],
+        )
+    except Exception:
+        # execv failed — fall through and let the app start normally.
+        # MQTT fanout will not work, but everything else will.
+        print(
+            "\n" + "!" * 78 + "\n"
+            "  AUTO-RESTART FAILED :<\n" + "!" * 78 + "\n"
+            "\n"
+            "  We tried to restart uvicorn with the necessary settings\n"
+            "  automatically, but there was a problem with the invocation\n"
+            "  (not shocking; this is a fragile system).\n"
+            "\n"
+            "  Please rerun RemoteTerm with a command like:\n"
+            "\n"
+            "    uv run uvicorn app.main:app \033[1m--loop none\033[0m [... other options ...]\n"
+            "\n"
+            "  Setting '--loop none' on uvicorn startup will put you in a good\n"
+            "  state for MQTT and bypass this self-repair.\n"
+            "\n"
+            "  The server is starting anyway -- everything except MQTT fanout\n"
+            "  will work normally. If you want to suppress this attempt, \n"
+            "  set the env var MESHCORE_NO_AUTO_LOOP_ON_WIN32=true\n"
+            "\n" + "!" * 78 + "\n",
+            file=sys.stderr,
+            flush=True,
+        )
+
+# ---------------------------------------------------------------------------
+
 import asyncio
 import logging
 from contextlib import asynccontextmanager

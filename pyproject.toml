@@ -53,6 +53,9 @@ ignore = [
     "SIM117", # nested with statements - can be clearer in tests
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"app/main.py" = ["E402"]  # imports after Windows event-loop re-exec block
+
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 
