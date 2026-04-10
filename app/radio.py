@@ -3,7 +3,6 @@ import glob
 import logging
 import platform
 import re
-from collections import OrderedDict
 from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
 
@@ -12,22 +11,23 @@ from serial.serialutil import SerialException
 
 from app.config import settings
 from app.keystore import clear_keys
+from app.radio_runtime_state import (
+    RadioDisconnectedError,
+    RadioOperationBusyError,
+    RadioOperationError,
+    RadioRuntimeState,
+)
 
 logger = logging.getLogger(__name__)
 MAX_FRONTEND_RECONNECT_ERROR_BROADCASTS = 3
 _SERIAL_PORT_ERROR_RE = re.compile(r"could not open port (?P<port>.+?):")
-
-
-class RadioOperationError(RuntimeError):
-    """Base class for shared radio operation lock errors."""
-
-
-class RadioOperationBusyError(RadioOperationError):
-    """Raised when a non-blocking radio operation cannot acquire the lock."""
-
-
-class RadioDisconnectedError(RadioOperationError):
-    """Raised when the radio disconnects between pre-check and lock acquisition."""
+__all__ = [
+    "RadioDisconnectedError",
+    "RadioManager",
+    "RadioOperationBusyError",
+    "RadioOperationError",
+    "radio_manager",
+]
 
 
 def detect_serial_devices() -> list[str]:
@@ -154,29 +154,189 @@ async def find_radio_port(baudrate: int) -> str | None:
 class RadioManager:
     """Manages the MeshCore radio connection."""
 
-    def __init__(self):
+    def __init__(self, runtime_state: RadioRuntimeState | None = None):
         self._meshcore: MeshCore | None = None
-        self._connection_info: str | None = None
-        self._connection_desired: bool = True
-        self._reconnect_task: asyncio.Task | None = None
-        self._last_connected: bool = False
-        self._reconnect_lock: asyncio.Lock | None = None
-        self._operation_lock: asyncio.Lock | None = None
-        self._setup_lock: asyncio.Lock | None = None
-        self._setup_in_progress: bool = False
-        self._setup_complete: bool = False
-        self._frontend_reconnect_error_broadcasts: int = 0
-        self.device_info_loaded: bool = False
-        self.max_contacts: int | None = None
-        self.device_model: str | None = None
-        self.firmware_build: str | None = None
-        self.firmware_version: str | None = None
-        self.max_channels: int = 40
-        self.path_hash_mode: int = 0
-        self.path_hash_mode_supported: bool = False
-        self._channel_slot_by_key: OrderedDict[str, int] = OrderedDict()
-        self._channel_key_by_slot: dict[int, str] = {}
-        self._pending_message_channel_key_by_slot: dict[int, str] = {}
+        self._state = runtime_state or RadioRuntimeState()
+
+    @property
+    def state(self) -> RadioRuntimeState:
+        return self._state
+
+    @property
+    def _connection_info(self) -> str | None:
+        return self._state.connection_info
+
+    @_connection_info.setter
+    def _connection_info(self, value: str | None) -> None:
+        self._state.connection_info = value
+
+    @property
+    def _connection_desired(self) -> bool:
+        return self._state.connection_desired
+
+    @_connection_desired.setter
+    def _connection_desired(self, value: bool) -> None:
+        self._state.connection_desired = value
+
+    @property
+    def _reconnect_task(self) -> asyncio.Task | None:
+        return self._state.reconnect_task
+
+    @_reconnect_task.setter
+    def _reconnect_task(self, value: asyncio.Task | None) -> None:
+        self._state.reconnect_task = value
+
+    @property
+    def _last_connected(self) -> bool:
+        return self._state.last_connected
+
+    @_last_connected.setter
+    def _last_connected(self, value: bool) -> None:
+        self._state.last_connected = value
+
+    @property
+    def _reconnect_lock(self) -> asyncio.Lock | None:
+        return self._state.reconnect_lock
+
+    @_reconnect_lock.setter
+    def _reconnect_lock(self, value: asyncio.Lock | None) -> None:
+        self._state.reconnect_lock = value
+
+    @property
+    def _operation_lock(self) -> asyncio.Lock | None:
+        return self._state.operation_lock
+
+    @_operation_lock.setter
+    def _operation_lock(self, value: asyncio.Lock | None) -> None:
+        self._state.operation_lock = value
+
+    @property
+    def _setup_lock(self) -> asyncio.Lock | None:
+        return self._state.setup_lock
+
+    @_setup_lock.setter
+    def _setup_lock(self, value: asyncio.Lock | None) -> None:
+        self._state.setup_lock = value
+
+    @property
+    def _setup_in_progress(self) -> bool:
+        return self._state.setup_in_progress
+
+    @_setup_in_progress.setter
+    def _setup_in_progress(self, value: bool) -> None:
+        self._state.setup_in_progress = value
+
+    @property
+    def _setup_complete(self) -> bool:
+        return self._state.setup_complete
+
+    @_setup_complete.setter
+    def _setup_complete(self, value: bool) -> None:
+        self._state.setup_complete = value
+
+    @property
+    def _frontend_reconnect_error_broadcasts(self) -> int:
+        return self._state.frontend_reconnect_error_broadcasts
+
+    @_frontend_reconnect_error_broadcasts.setter
+    def _frontend_reconnect_error_broadcasts(self, value: int) -> None:
+        self._state.frontend_reconnect_error_broadcasts = value
+
+    @property
+    def device_info_loaded(self) -> bool:
+        return self._state.device_info_loaded
+
+    @device_info_loaded.setter
+    def device_info_loaded(self, value: bool) -> None:
+        self._state.device_info_loaded = value
+
+    @property
+    def max_contacts(self) -> int | None:
+        return self._state.max_contacts
+
+    @max_contacts.setter
+    def max_contacts(self, value: int | None) -> None:
+        self._state.max_contacts = value
+
+    @property
+    def device_model(self) -> str | None:
+        return self._state.device_model
+
+    @device_model.setter
+    def device_model(self, value: str | None) -> None:
+        self._state.device_model = value
+
+    @property
+    def firmware_build(self) -> str | None:
+        return self._state.firmware_build
+
+    @firmware_build.setter
+    def firmware_build(self, value: str | None) -> None:
+        self._state.firmware_build = value
+
+    @property
+    def firmware_version(self) -> str | None:
+        return self._state.firmware_version
+
+    @firmware_version.setter
+    def firmware_version(self, value: str | None) -> None:
+        self._state.firmware_version = value
+
+    @property
+    def max_channels(self) -> int:
+        return self._state.max_channels
+
+    @max_channels.setter
+    def max_channels(self, value: int) -> None:
+        self._state.max_channels = value
+
+    @property
+    def path_hash_mode(self) -> int:
+        return self._state.path_hash_mode
+
+    @path_hash_mode.setter
+    def path_hash_mode(self, value: int) -> None:
+        self._state.path_hash_mode = value
+
+    @path_hash_mode.deleter
+    def path_hash_mode(self) -> None:
+        self._state.path_hash_mode = 0
+
+    @property
+    def path_hash_mode_supported(self) -> bool:
+        return self._state.path_hash_mode_supported
+
+    @path_hash_mode_supported.setter
+    def path_hash_mode_supported(self, value: bool) -> None:
+        self._state.path_hash_mode_supported = value
+
+    @path_hash_mode_supported.deleter
+    def path_hash_mode_supported(self) -> None:
+        self._state.path_hash_mode_supported = False
+
+    @property
+    def _channel_slot_by_key(self):
+        return self._state.channel_slot_by_key
+
+    @_channel_slot_by_key.setter
+    def _channel_slot_by_key(self, value) -> None:
+        self._state.channel_slot_by_key = value
+
+    @property
+    def _channel_key_by_slot(self):
+        return self._state.channel_key_by_slot
+
+    @_channel_key_by_slot.setter
+    def _channel_key_by_slot(self, value) -> None:
+        self._state.channel_key_by_slot = value
+
+    @property
+    def _pending_message_channel_key_by_slot(self):
+        return self._state.pending_message_channel_key_by_slot
+
+    @_pending_message_channel_key_by_slot.setter
+    def _pending_message_channel_key_by_slot(self, value) -> None:
+        self._state.pending_message_channel_key_by_slot = value
 
     async def _acquire_operation_lock(
         self,
@@ -185,43 +345,23 @@ class RadioManager:
         blocking: bool,
     ) -> None:
         """Acquire the shared radio operation lock."""
-
-        if self._operation_lock is None:
-            self._operation_lock = asyncio.Lock()
-
-        if not blocking:
-            if self._operation_lock.locked():
-                raise RadioOperationBusyError(f"Radio is busy (operation: {name})")
-            # In single-threaded asyncio the lock cannot be acquired between the
-            # check above and the await below (no other coroutine runs until we
-            # yield). The await returns immediately for an uncontested lock.
-            await self._operation_lock.acquire()
-        else:
-            await self._operation_lock.acquire()
-
-        logger.debug("Acquired radio operation lock (%s)", name)
+        await self._state.acquire_operation_lock(name, blocking=blocking)
 
     def _release_operation_lock(self, name: str) -> None:
         """Release the shared radio operation lock."""
-        if self._operation_lock and self._operation_lock.locked():
-            self._operation_lock.release()
-            logger.debug("Released radio operation lock (%s)", name)
-        else:
-            logger.error("Attempted to release unlocked radio operation lock (%s)", name)
+        self._state.release_operation_lock(name)
+
+    async def acquire_operation_lock(self, name: str, *, blocking: bool = True) -> None:
+        """Acquire the shared radio operation lock."""
+        await self._acquire_operation_lock(name, blocking=blocking)
+
+    def release_operation_lock(self, name: str) -> None:
+        """Release the shared radio operation lock."""
+        self._release_operation_lock(name)
 
     def _reset_connected_runtime_state(self) -> None:
         """Clear cached runtime state after a transport teardown completes."""
-        self._setup_complete = False
-        self.device_info_loaded = False
-        self.max_contacts = None
-        self.device_model = None
-        self.firmware_build = None
-        self.firmware_version = None
-        self.max_channels = 40
-        self.path_hash_mode = 0
-        self.path_hash_mode_supported = False
-        self.reset_channel_send_cache()
-        self.clear_pending_message_channel_slots()
+        self._state.reset_connected_runtime_state()
 
     @asynccontextmanager
     async def radio_operation(

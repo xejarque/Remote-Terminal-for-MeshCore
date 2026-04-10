@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
+from app.radio_runtime_state import RadioRuntimeState
 from app.services.radio_runtime import RadioRuntime
 
 
@@ -114,3 +115,17 @@ async def test_lifecycle_passthrough_methods_delegate_to_current_manager():
     manager.start_connection_monitor.assert_awaited_once()
     manager.stop_connection_monitor.assert_awaited_once()
     manager.disconnect.assert_awaited_once()
+
+
+def test_explicit_runtime_state_api_replaces_attribute_forwarding():
+    manager = _Manager(meshcore="meshcore", is_connected=True)
+    manager.state = RadioRuntimeState()
+    manager.state.path_hash_mode = 2
+    runtime = RadioRuntime(manager)
+
+    assert runtime.path_hash_mode == 2
+    runtime.path_hash_mode = 1
+    assert manager.state.path_hash_mode == 1
+
+    with pytest.raises(AttributeError, match="does not expose attribute"):
+        _ = runtime.some_random_attr
