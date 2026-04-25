@@ -64,6 +64,7 @@ from .protocol import (
     FrameParser,
     build_error,
     build_ok,
+    encode_path_byte,
     frame_response,
     pad,
 )
@@ -368,25 +369,24 @@ class ProxySession:
     def _parse_destination_and_text(self, remaining: bytes) -> tuple[str | None, str | None]:
         """Resolve destination key + text from the combined buffer.
 
-        Tries 32-byte full key first (always accepted — _do_send_dm resolves
-        from the repository), then falls back to 6-byte prefix matched against
-        the cached contacts list.
+        The standard companion protocol sends a 6-byte pubkey prefix at the
+        start of ``remaining``, so we try prefix resolution first.  Only when
+        prefix lookup fails do we attempt a 32-byte full-key parse (used by
+        ``meshcore_py`` ``send_msg_with_retry``).
         """
-        # Try 32-byte full key first (send_msg_with_retry sends full keys)
-        if len(remaining) > 32:
-            candidate = remaining[:32].hex()
-            # Accept any well-formed 64-char hex key — _do_send_dm will
-            # resolve it from the repository, not just our favorites cache.
-            if len(candidate) == 64:
-                return candidate, remaining[32:].decode("utf-8", "ignore")
-
-        # Fall back to 6-byte prefix (send_msg default) — can only resolve
-        # against our cached contacts since we need an unambiguous match.
+        # Standard path: 6-byte prefix — resolve against cached contacts.
         if len(remaining) > 6:
             prefix = remaining[:6].hex()
             matches = [c["public_key"] for c in self.contacts if c["public_key"].startswith(prefix)]
             if len(matches) == 1:
                 return matches[0], remaining[6:].decode("utf-8", "ignore")
+
+        # Extended path: 32-byte full key (send_msg_with_retry sends full
+        # keys).  _do_send_dm resolves from the repository, not just our
+        # favorites cache.
+        if len(remaining) > 32:
+            candidate = remaining[:32].hex()
+            return candidate, remaining[32:].decode("utf-8", "ignore")
 
         return None, None
 
@@ -553,6 +553,43 @@ class ProxySession:
             self.key_to_idx[k] = i
         logger.debug("Pre-loaded %d favorite channel(s)", len(self.channel_slots))
 
+    # ── Broadcast event helpers ────────────────────────────────────────
+
+    @staticmethod
+    def _extract_path_meta(data: dict[str, Any]) -> tuple[int, int]:
+        """Extract (snr_byte, path_len_byte) from a broadcast message dict.
+
+        Returns the SNR as ``int8(snr * 4)`` and path_len as the companion-
+        protocol packed byte ``(hash_mode << 6) | hop_count``.  When no path
+        data is available, returns ``(0, 0)`` — 0 hops at 1-byte hash mode,
+        which is the safest "we don't know" default for flood messages.
+        """
+        paths = data.get("paths") or []
+        first = paths[0] if paths else None
+
+        # SNR — V3 field, signed int8 encoded as snr * 4
+        snr_raw = (first.get("snr") if first else None) or 0.0
+        snr_byte = max(-128, min(127, int(snr_raw * 4))) & 0xFF
+
+        if first is None:
+            return snr_byte, 0  # no path info → 0 hops
+
+        hop_count = first.get("path_len")
+        path_hex: str = first.get("path") or ""
+        if hop_count is None:
+            # Legacy: infer 1-byte hops from hex length
+            hop_count = len(path_hex) // 2
+
+        # Determine hash mode from path hex length and hop count
+        if hop_count > 0 and path_hex:
+            path_byte_len = len(path_hex) // 2
+            hash_size = path_byte_len // hop_count if hop_count else 1
+            hash_mode = max(0, hash_size - 1)  # 1-byte → 0, 2 → 1, 3 → 2
+        else:
+            hash_mode = 0
+
+        return snr_byte, encode_path_byte(hop_count, hash_mode)
+
     # ── Broadcast event handlers (called by server.dispatch_event) ──
 
     async def _push_contact_from_db(self, public_key: str) -> None:
@@ -589,12 +626,13 @@ class ProxySession:
 
             text = data.get("text") or ""
             ts = int(data.get("sender_timestamp") or time.time())
+            snr_byte, path_byte = self._extract_path_meta(data)
 
             frame = bytearray([RESP_CONTACT_MSG_RECV_V3])
-            frame.append(0)  # SNR
+            frame.append(snr_byte)
             frame.extend(b"\x00\x00")  # reserved
             frame.extend(bytes.fromhex(sender_key[:12]))  # 6-byte prefix
-            frame.append(0xFF)  # flood
+            frame.append(path_byte)
             frame.append(0)  # txt_type
             frame.extend(struct.pack("<I", ts))
             frame.extend(text.encode("utf-8"))
@@ -610,12 +648,13 @@ class ProxySession:
 
             text = data.get("text") or ""
             ts = int(data.get("sender_timestamp") or time.time())
+            snr_byte, path_byte = self._extract_path_meta(data)
 
             frame = bytearray([RESP_CHANNEL_MSG_RECV_V3])
-            frame.append(0)  # SNR
+            frame.append(snr_byte)
             frame.extend(b"\x00\x00")  # reserved
             frame.append(idx)
-            frame.append(0xFF)  # flood
+            frame.append(path_byte)
             frame.append(0)  # txt_type
             frame.extend(struct.pack("<I", ts))
             frame.extend(text.encode("utf-8"))

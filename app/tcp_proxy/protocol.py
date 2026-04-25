@@ -131,7 +131,7 @@ def pad(data: bytes, length: int) -> bytes:
 def encode_path_byte(hop_count: int, hash_mode: int) -> int:
     """Encode hop count + hash mode into a single packed byte.
 
-    Returns ``0xFF`` (flood) when either value is negative.
+    Returns ``0xFF`` (direct / non-flood) when either value is negative.
     """
     if hop_count < 0 or hash_mode < 0:
         return 0xFF

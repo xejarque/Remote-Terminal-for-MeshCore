@@ -59,7 +59,7 @@ def build_contact(
     if direct_path_len >= 0 and direct_path_hash_mode >= 0:
         out.append(encode_path_byte(direct_path_len, direct_path_hash_mode))
     else:
-        out.append(0xFF)  # flood
+        out.append(0xFF)  # no route known
 
     path_bytes = bytes.fromhex(direct_path) if direct_path else b""
     out.extend(pad(path_bytes, 64))

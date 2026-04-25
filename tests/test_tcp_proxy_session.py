@@ -24,7 +24,9 @@ from app.tcp_proxy.protocol import (
     PROXY_FW_VER,
     PUSH_MSG_WAITING,
     RESP_BATTERY,
+    RESP_CHANNEL_MSG_RECV_V3,
     RESP_CONTACT_END,
+    RESP_CONTACT_MSG_RECV_V3,
     RESP_CONTACT_START,
     RESP_CURRENT_TIME,
     RESP_DEVICE_INFO,
@@ -33,6 +35,7 @@ from app.tcp_proxy.protocol import (
     RESP_NO_MORE_MSGS,
     RESP_OK,
     RESP_SELF_INFO,
+    encode_path_byte,
 )
 from app.tcp_proxy.session import ProxySession
 
@@ -330,6 +333,32 @@ class TestSendDm:
         ack_from_push = payloads[1][1:5]
         assert ack_from_sent == ack_from_push
 
+    @pytest.mark.asyncio
+    async def test_long_text_with_prefix(self):
+        """6-byte prefix + long text (>26 chars) must resolve correctly."""
+        session, sent = _make_session()
+        session.contacts = [{"public_key": EXAMPLE_KEY}]
+
+        prefix = bytes.fromhex(EXAMPLE_KEY[:12])
+        long_text = b"A" * 50  # well over 26 chars
+        cmd = (
+            bytes([CMD_SEND_TXT_MSG, 0, 0])
+            + int(time.time()).to_bytes(4, "little")
+            + prefix
+            + long_text
+        )
+
+        with patch.object(session, "_do_send_dm", new_callable=AsyncMock) as mock_send:
+            await session._cmd_send_dm(cmd)
+
+        payloads = _extract_payloads(sent)
+        assert payloads[0][0] == RESP_MSG_SENT  # not ERR
+
+        mock_send.assert_called_once()
+        call_key, call_text = mock_send.call_args[0]
+        assert call_key == EXAMPLE_KEY
+        assert call_text == "A" * 50
+
 
 class TestSendChannel:
     @pytest.mark.asyncio
@@ -414,6 +443,78 @@ class TestSyncNext:
         assert len(session._msg_queue) == 0
 
 
+class TestExtractPathMeta:
+    """Tests for _extract_path_meta static helper."""
+
+    def test_no_paths(self):
+        snr, path_byte = ProxySession._extract_path_meta({"paths": None})
+        assert snr == 0
+        assert path_byte == 0  # 0 hops, mode 0
+
+    def test_empty_paths_list(self):
+        snr, path_byte = ProxySession._extract_path_meta({"paths": []})
+        assert snr == 0
+        assert path_byte == 0
+
+    def test_one_byte_hops(self):
+        """2 hops at 1-byte hash mode → path_byte = (0 << 6) | 2 = 0x02."""
+        snr, path_byte = ProxySession._extract_path_meta(
+            {
+                "paths": [{"path": "aabb", "path_len": 2, "snr": None, "rssi": None}],
+            }
+        )
+        assert path_byte == encode_path_byte(2, 0)
+        assert path_byte == 0x02
+
+    def test_two_byte_hops(self):
+        """3 hops at 2-byte hash mode → path_byte = (1 << 6) | 3 = 0x43."""
+        snr, path_byte = ProxySession._extract_path_meta(
+            {
+                "paths": [{"path": "aabbccddee11", "path_len": 3, "snr": None, "rssi": None}],
+            }
+        )
+        assert path_byte == encode_path_byte(3, 1)
+        assert path_byte == 0x43
+
+    def test_three_byte_hops(self):
+        """1 hop at 3-byte hash mode → path_byte = (2 << 6) | 1 = 0x81."""
+        snr, path_byte = ProxySession._extract_path_meta(
+            {
+                "paths": [{"path": "aabbcc", "path_len": 1, "snr": None, "rssi": None}],
+            }
+        )
+        assert path_byte == encode_path_byte(1, 2)
+        assert path_byte == 0x81
+
+    def test_snr_encoded(self):
+        """SNR is encoded as int8(snr * 4)."""
+        snr, _ = ProxySession._extract_path_meta(
+            {
+                "paths": [{"path": "aa", "path_len": 1, "snr": -5.25, "rssi": -100}],
+            }
+        )
+        assert snr == (-21) & 0xFF  # -5.25 * 4 = -21 → unsigned byte
+
+    def test_zero_hops_empty_path(self):
+        """0 hops, empty path → path_byte 0."""
+        snr, path_byte = ProxySession._extract_path_meta(
+            {
+                "paths": [{"path": "", "path_len": 0, "snr": None, "rssi": None}],
+            }
+        )
+        assert path_byte == 0
+
+    def test_legacy_no_path_len(self):
+        """path_len=None falls back to inferring from hex length (1-byte hops)."""
+        snr, path_byte = ProxySession._extract_path_meta(
+            {
+                "paths": [{"path": "aabb", "path_len": None, "snr": None, "rssi": None}],
+            }
+        )
+        # Inferred: 2 hops, path is 2 bytes → 1-byte hash → mode 0
+        assert path_byte == encode_path_byte(2, 0)
+
+
 class TestEventHandlers:
     @pytest.mark.asyncio
     async def test_priv_message_queued(self):
@@ -432,6 +533,28 @@ class TestEventHandlers:
         assert payloads[0][0] == PUSH_MSG_WAITING
 
     @pytest.mark.asyncio
+    async def test_priv_message_path_encoding(self):
+        """DM frame encodes path_len byte from message path data."""
+        session, sent = _make_session()
+        data = {
+            "type": "PRIV",
+            "outgoing": False,
+            "conversation_key": EXAMPLE_KEY,
+            "text": "hi",
+            "sender_timestamp": 1700000000,
+            "paths": [{"path": "aabb", "path_len": 2, "snr": 3.0, "rssi": -80}],
+        }
+        await session.on_event_message(data)
+
+        frame = session._msg_queue[0]
+        assert frame[0] == RESP_CONTACT_MSG_RECV_V3
+        snr_byte = frame[1]
+        assert snr_byte == 12  # 3.0 * 4
+        # path_len byte is at offset 10 (after: type, snr, 2 reserved, 6 prefix)
+        path_byte = frame[10]
+        assert path_byte == encode_path_byte(2, 0)  # 2 hops, 1-byte hash
+
+    @pytest.mark.asyncio
     async def test_chan_message_queued(self):
         session, sent = _make_session()
         key = "cc" * 16
@@ -447,6 +570,52 @@ class TestEventHandlers:
         await session.on_event_message(data)
 
         assert len(session._msg_queue) == 1
+
+    @pytest.mark.asyncio
+    async def test_chan_message_path_encoding(self):
+        """Channel frame encodes path_len byte correctly instead of 0xFF."""
+        session, sent = _make_session()
+        key = "cc" * 16
+        session.key_to_idx = {key: 0}
+
+        data = {
+            "type": "CHAN",
+            "outgoing": False,
+            "conversation_key": key,
+            "text": "hello",
+            "sender_timestamp": 1700000000,
+            "paths": [{"path": "aabbccdd", "path_len": 2, "snr": -2.5, "rssi": -90}],
+        }
+        await session.on_event_message(data)
+
+        frame = session._msg_queue[0]
+        assert frame[0] == RESP_CHANNEL_MSG_RECV_V3
+        snr_byte = frame[1]
+        assert snr_byte == (-10) & 0xFF  # -2.5 * 4
+        # path_len byte is at offset 5 (after: type, snr, 2 reserved, channel_idx)
+        path_byte = frame[5]
+        assert path_byte == encode_path_byte(2, 1)  # 2 hops, 2-byte hash
+        assert path_byte != 0xFF  # Must NOT be the old wrong value
+
+    @pytest.mark.asyncio
+    async def test_chan_message_no_paths_defaults_zero(self):
+        """Channel message with no path data uses 0 (not 0xFF)."""
+        session, sent = _make_session()
+        key = "cc" * 16
+        session.key_to_idx = {key: 0}
+
+        data = {
+            "type": "CHAN",
+            "outgoing": False,
+            "conversation_key": key,
+            "text": "hello",
+            "sender_timestamp": 1700000000,
+        }
+        await session.on_event_message(data)
+
+        frame = session._msg_queue[0]
+        path_byte = frame[5]
+        assert path_byte == 0  # 0 hops, not 0xFF
 
     @pytest.mark.asyncio
     async def test_outgoing_message_ignored(self):
