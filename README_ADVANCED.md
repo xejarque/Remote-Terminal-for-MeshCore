@@ -39,6 +39,30 @@ Import via `PUT /api/radio/private-key` is always available regardless of this s
 
 The Radio Settings config export/import feature uses these endpoints. When export is disabled, config exports will omit the private key and show a notice.
 
+## MeshCore TCP Proxy
+
+RemoteTerm can emulate a MeshCore companion radio over TCP, allowing MeshCore clients (mobile apps, meshcore-cli, meshcore-ha) to connect to it as if it were a directly-connected radio.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MESHCORE_TCP_PROXY_ENABLED` | `false` | Enable the TCP companion protocol proxy |
+| `MESHCORE_TCP_PROXY_BIND` | `0.0.0.0` | Bind address for the proxy TCP server |
+| `MESHCORE_TCP_PROXY_PORT` | `5001` | Port for the proxy TCP server |
+
+Once enabled, MeshCore clients can connect:
+
+```bash
+meshcore-cli --tcp <host>:5001
+```
+
+**How it works:** The proxy translates the MeshCore companion binary protocol into in-process RemoteTerm operations. Contacts, channels, and messages come from the RemoteTerm database. Outgoing messages are sent through RemoteTerm's send orchestration (with radio lock, retries, and ACK tracking). Incoming messages are pushed to connected clients in real time.
+
+**Limitations:**
+- Only favorite contacts are synced to clients
+- Only favorite channels are pre-loaded into slots; clients can load additional channels via SET_CHANNEL (local to the proxy session, does not modify RemoteTerm channel configuration)
+- DMs receive an immediate synthetic ACK; actual delivery retries are handled server-side by RemoteTerm
+- Radio configuration changes (SET_NAME, SET_LATLON) are applied to the real radio
+
 ## Contact Loading Issues
 
 RemoteTerm loads favorite and recently active contacts onto the radio so that the radio can automatically acknowledge incoming DMs on your behalf. To do this, it first enumerates the radio's existing contact table, then reconciles it with the desired working set.

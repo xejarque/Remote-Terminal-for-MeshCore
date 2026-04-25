@@ -22,6 +22,7 @@ A web interface for MeshCore mesh radio networks. The backend connects to a Mesh
 
 Ancillary AGENTS.md files which should generally not be reviewed unless specific work is being performed on those features include:
 - `app/fanout/AGENTS_fanout.md` - Fanout bus architecture (MQTT, bots, webhooks, Apprise, SQS)
+- `app/tcp_proxy/AGENTS_tcp_proxy.md` - TCP companion protocol proxy (emulates a MeshCore radio for remote clients)
 - `frontend/src/components/visualizer/AGENTS_packet_visualizer.md` - Packet visualizer (force-directed graph, advert-path identity, layout engine)
 
 ## Architecture Overview
@@ -507,6 +508,9 @@ mc.subscribe(EventType.ACK, handler)
 | `MESHCORE_FORCE_CHANNEL_SLOT_RECONFIGURE` | `false` | Disable channel-slot reuse and force `set_channel(...)` before every channel send, even on serial/BLE |
 | `MESHCORE_LOAD_WITH_AUTOEVICT` | `false` | Enable autoevict contact loading: sets `AUTO_ADD_OVERWRITE_OLDEST` on the radio so adds never fail with TABLE_FULL, skips the removal phase during reconcile, and allows blind loading when `get_contacts` fails. Loaded contacts are not radio-favorited and may be evicted by new adverts when the table is full. |
 | `MESHCORE_ENABLE_LOCAL_PRIVATE_KEY_EXPORT` | `false` | Enable `GET /api/radio/private-key` to return the in-memory private key as hex. Disabled by default; only enable on a trusted network where you need to retrieve the key (e.g. for backup or migration). |
+| `MESHCORE_TCP_PROXY_ENABLED` | `false` | Enable the MeshCore TCP companion protocol proxy (see `app/tcp_proxy/AGENTS_tcp_proxy.md`) |
+| `MESHCORE_TCP_PROXY_BIND` | `0.0.0.0` | Bind address for the TCP proxy server |
+| `MESHCORE_TCP_PROXY_PORT` | `5001` | Port for the TCP proxy server |
 
 **Note:** Runtime app settings are stored in the database (`app_settings` table), not environment variables. These include `max_radio_contacts`, `auto_decrypt_dm_on_advert`, `advert_interval`, `last_advert_time`, `last_message_times`, `flood_scope`, `blocked_keys`, `blocked_names`, `discovery_blocked_types`, `tracked_telemetry_repeaters`, `auto_resend_channel`, and `telemetry_interval_hours`. `max_radio_contacts` is the configured radio contact capacity baseline used by background maintenance: favorites reload first, non-favorite fill targets about 80% of that value, and full offload/reload triggers around 95% occupancy. They are configured via `GET/PATCH /api/settings`. MQTT, bot, webhook, Apprise, and SQS configs are stored in the `fanout_configs` table, managed via `/api/fanout`. If the radio's channel slots appear unstable or another client is mutating them underneath this app, operators can force the old always-reconfigure send path with `MESHCORE_FORCE_CHANNEL_SLOT_RECONFIGURE=true`.
 

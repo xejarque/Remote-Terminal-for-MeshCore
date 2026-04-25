@@ -117,6 +117,15 @@ def broadcast_event(event_type: str, data: dict, *, realtime: bool = True) -> No
         elif event_type == "contact":
             asyncio.create_task(fanout_manager.broadcast_contact(data))
 
+        # TCP proxy dispatch
+        if event_type in ("message", "message_acked", "contact"):
+            from app.config import settings
+
+            if settings.tcp_proxy_enabled:
+                from app.tcp_proxy.server import dispatch_event
+
+                asyncio.create_task(dispatch_event(event_type, data))
+
 
 def broadcast_error(message: str, details: str | None = None) -> None:
     """Broadcast an error notification to all connected clients.

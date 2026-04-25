@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     skip_post_connect_sync: bool = False
     basic_auth_username: str = ""
     basic_auth_password: str = ""
+    tcp_proxy_enabled: bool = False
+    tcp_proxy_bind: str = "0.0.0.0"
+    tcp_proxy_port: int = 5001
 
     @model_validator(mode="after")
     def validate_transport_exclusivity(self) -> "Settings":

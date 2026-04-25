@@ -2,13 +2,14 @@ import logging
 import sys
 
 # ---------------------------------------------------------------------------
-# Windows event-loop advisory for MQTT fanout
+# Windows event-loop advisory for MQTT fanout and TCP proxy
 # ---------------------------------------------------------------------------
 # On Windows, uvicorn's default event loop (ProactorEventLoop) does not
-# implement add_reader()/add_writer(), which paho-mqtt (via aiomqtt) requires.
-# We cannot fix this from inside the app — the loop is already created by the
-# time this module is imported.  Log a prominent warning so Windows operators
-# who want MQTT know to add ``--loop none`` to their uvicorn command.
+# implement add_reader()/add_writer(), which paho-mqtt (via aiomqtt) and
+# asyncio.start_server (TCP proxy) require.  The loop is already created by
+# the time this module is imported, so we cannot switch it here.  Log a
+# prominent warning so Windows operators know to start uvicorn with the
+# selector loop policy set before import.
 # ---------------------------------------------------------------------------
 if sys.platform == "win32":
     import asyncio as _asyncio
@@ -21,12 +22,15 @@ if sys.platform == "win32":
             "  NOTE FOR WINDOWS USERS\n" + "!" * 78 + "\n"
             "\n"
             "  The running event loop is ProactorEventLoop, which is not\n"
-            "  compatible with MQTT fanout (aiomqtt / paho-mqtt).\n"
+            "  compatible with MQTT fanout or the TCP proxy.\n"
             "\n"
-            "  If you use MQTT integrations, restart with --loop none:\n"
+            "  If you use either feature, restart with:\n"
             "\n"
-            "    uv run uvicorn app.main:app \033[1m--loop none\033[0m"
-            " [... other options ...]\n"
+            '    python -c "import asyncio; asyncio.set_event_loop_policy('
+            'asyncio.WindowsSelectorEventLoopPolicy())" & '
+            "uv run uvicorn app.main:app [... options ...]\n"
+            "\n"
+            "  Or add --loop asyncio to the uvicorn command.\n"
             "\n"
             "  Everything else works fine as-is.\n"
             "\n" + "!" * 78 + "\n",
@@ -130,12 +134,21 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Failed to start fanout modules")
 
+    if server_settings.tcp_proxy_enabled:
+        from app.tcp_proxy import start_tcp_proxy
+
+        await start_tcp_proxy()
+
     startup_radio_task = asyncio.create_task(_startup_radio_connect_and_setup())
     app.state.startup_radio_task = startup_radio_task
 
     yield
 
     logger.info("Shutting down")
+    if server_settings.tcp_proxy_enabled:
+        from app.tcp_proxy import stop_tcp_proxy
+
+        await stop_tcp_proxy()
     if startup_radio_task and not startup_radio_task.done():
         startup_radio_task.cancel()
         try:

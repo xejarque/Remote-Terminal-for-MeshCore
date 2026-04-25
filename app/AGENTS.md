@@ -55,6 +55,7 @@ app/
 │   ├── send.py                  # pywebpush wrapper (async via thread executor)
 │   └── manager.py               # Push dispatch: filter, build payload, concurrent send
 ├── fanout/              # Fanout bus: MQTT, bots, webhooks, Apprise, SQS (see fanout/AGENTS_fanout.md)
+├── tcp_proxy/           # MeshCore TCP companion protocol proxy (see tcp_proxy/AGENTS_tcp_proxy.md)
 ├── telemetry_interval.py # Shared telemetry interval math for tracked-repeater scheduler
 ├── path_utils.py        # Path hex rendering and hop-width helpers
 ├── region_scope.py      # Normalize/validate regional flood-scope values
@@ -426,7 +427,11 @@ tests/
 ├── test_telemetry_interval.py  # Telemetry interval scheduling math
 ├── test_version_info.py        # Version/build metadata resolution
 ├── test_websocket.py           # WS manager broadcast/cleanup
-└── test_websocket_route.py     # WS endpoint lifecycle
+├── test_websocket_route.py     # WS endpoint lifecycle
+├── test_tcp_proxy_protocol.py  # TCP proxy frame parsing and helpers
+├── test_tcp_proxy_encoder.py   # TCP proxy binary encoding
+├── test_tcp_proxy_session.py   # TCP proxy session command handlers
+└── test_tcp_proxy_integration.py # TCP proxy end-to-end frame exchange
 ```
 
 ## Errata & Known Non-Issues
